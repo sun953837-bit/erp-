@@ -23,7 +23,11 @@
 - Stage-1 domain modules (`channel_hub`, `order_center`, `delivery_center`, `finance_center`)
   - Not separated as concrete modules in filesystem yet.
 - BI preparation
-  - No Stage-1 BI dimension/fact ETL implementation in this repository.
+  - Minimal Stage-1 BI ETL is implemented via:
+    - API: `POST /api/bi/etl/refresh`, `GET /api/bi/etl/summary`
+    - CLI: `php artisan bi:etl-refresh --mode=full|incremental`
+    - Scheduler: env-driven incremental refresh (`BI_ETL_*`)
+  - Scope is limited to theme-table refresh and run metadata; no dashboard/report-layer implementation.
 
 ## Repository Hygiene Suggestions
 

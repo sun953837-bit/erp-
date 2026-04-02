@@ -11,5 +11,6 @@
 **/*.sqlite3
 **/*.log
 **/logs/
+**/bootstrap/cache/*.php
 mysql-data/
 redis-data/

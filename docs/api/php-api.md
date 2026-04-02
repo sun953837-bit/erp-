@@ -82,6 +82,27 @@ Behavior:
 - `POST /finance/refunds`
 - `GET /finance/reconciliations`
 
+## BI ETL (Stage-1 Minimal)
+- `GET /bi/etl/summary`
+- `POST /bi/etl/refresh`
+  - Supported mode:
+    - full refresh (`mode=full`)
+    - incremental refresh (`mode=incremental`, `window_days=1..90`)
+  - Writes Stage-1 theme tables:
+    - `dim_platform`, `dim_shop`, `dim_customer`, `dim_service`, `dim_date`
+    - `fact_service_orders`, `fact_after_sales`, `fact_settlements`, `fact_project_delivery`
+  - `fact_after_sales` includes two sources:
+    - `refund_record` (from `refund_records`)
+    - `service_order_status` (orders in `after_sale` state without refund rows)
+
+CLI + schedule:
+- `php artisan bi:etl-refresh --mode=full`
+- `php artisan bi:etl-refresh --mode=incremental --window-days=3`
+- scheduled incremental refresh is controlled by `.env`:
+  - `BI_ETL_AUTO_REFRESH_ENABLED`
+  - `BI_ETL_CRON`
+  - `BI_ETL_INCREMENTAL_WINDOW_DAYS`
+
 ## Legacy Contract Notes
 
 - `PATCH /orders/{id}/status` (legacy generic order route) is still not implemented.

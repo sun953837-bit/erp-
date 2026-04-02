@@ -13,9 +13,25 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $now = Carbon::now();
+        $driver = DB::getDriverName();
 
-        DB::statement('SET FOREIGN_KEY_CHECKS=0');
+        if ($driver === 'mysql') {
+            DB::statement('SET FOREIGN_KEY_CHECKS=0');
+        } elseif ($driver === 'sqlite') {
+            DB::statement('PRAGMA foreign_keys = OFF');
+        }
+
         foreach ([
+            'fact_project_delivery',
+            'fact_settlements',
+            'fact_after_sales',
+            'fact_service_orders',
+            'dim_date',
+            'dim_service',
+            'dim_customer',
+            'dim_shop',
+            'dim_platform',
+            'bi_etl_runs',
             'sync_receipt_logs',
             'raw_orders',
             'raw_refunds',
@@ -45,12 +61,44 @@ class DatabaseSeeder extends Seeder
         ] as $table) {
             DB::table($table)->truncate();
         }
-        DB::statement('SET FOREIGN_KEY_CHECKS=1');
+        if ($driver === 'mysql') {
+            DB::statement('SET FOREIGN_KEY_CHECKS=1');
+        } elseif ($driver === 'sqlite') {
+            DB::statement('PRAGMA foreign_keys = ON');
+        }
 
         $adminRoleId = DB::table('roles')->insertGetId([
             'code' => 'ADMIN',
             'name' => 'Administrator',
             'status' => 'ACTIVE',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $amazonShopId = DB::table('shops')->insertGetId([
+            'shop_code' => 'AMZ_US_001',
+            'shop_name' => 'Amazon US',
+            'platform_code' => 'amazon',
+            'site_code' => 'US',
+            'currency' => 'USD',
+            'timezone' => 'America/Los_Angeles',
+            'status' => 'ACTIVE',
+            'owner_name' => 'Alice',
+            'owner_phone' => '13800000001',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $tiktokShopId = DB::table('shops')->insertGetId([
+            'shop_code' => 'TIKTOK_US_001',
+            'shop_name' => 'TikTok US',
+            'platform_code' => 'tiktok',
+            'site_code' => 'US',
+            'currency' => 'USD',
+            'timezone' => 'America/New_York',
+            'status' => 'ACTIVE',
+            'owner_name' => 'Bob',
+            'owner_phone' => '13800000002',
             'created_at' => $now,
             'updated_at' => $now,
         ]);
@@ -177,34 +225,6 @@ class DatabaseSeeder extends Seeder
             'user_id' => $adminUserId,
             'role_id' => $adminRoleId,
             'created_at' => $now,
-        ]);
-
-        $amazonShopId = DB::table('shops')->insertGetId([
-            'shop_code' => 'AMZ_US_001',
-            'shop_name' => 'Amazon US',
-            'platform_code' => 'amazon',
-            'site_code' => 'US',
-            'currency' => 'USD',
-            'timezone' => 'America/Los_Angeles',
-            'status' => 'ACTIVE',
-            'owner_name' => 'Alice',
-            'owner_phone' => '13800000001',
-            'created_at' => $now,
-            'updated_at' => $now,
-        ]);
-
-        $tiktokShopId = DB::table('shops')->insertGetId([
-            'shop_code' => 'TIKTOK_US_001',
-            'shop_name' => 'TikTok US',
-            'platform_code' => 'tiktok',
-            'site_code' => 'US',
-            'currency' => 'USD',
-            'timezone' => 'America/New_York',
-            'status' => 'ACTIVE',
-            'owner_name' => 'Bob',
-            'owner_phone' => '13800000002',
-            'created_at' => $now,
-            'updated_at' => $now,
         ]);
 
         $spu1 = DB::table('products_spu')->insertGetId([

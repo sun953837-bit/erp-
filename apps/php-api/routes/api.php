@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BiEtlController;
 use App\Http\Controllers\Api\ChannelAccountController;
 use App\Http\Controllers\Api\FinanceCenterController;
 use App\Http\Controllers\Api\HealthController;
@@ -46,6 +47,9 @@ Route::post('/finance/payments', [FinanceCenterController::class, 'createPayment
 Route::get('/finance/refunds', [FinanceCenterController::class, 'refunds']);
 Route::post('/finance/refunds', [FinanceCenterController::class, 'createRefund']);
 Route::get('/finance/reconciliations', [FinanceCenterController::class, 'reconciliations']);
+
+Route::get('/bi/etl/summary', [BiEtlController::class, 'summary']);
+Route::post('/bi/etl/refresh', [BiEtlController::class, 'refresh']);
 
 Route::get('/platform-product-mappings', [PlatformProductMappingController::class, 'index']);
 Route::post('/platform-product-mappings', [PlatformProductMappingController::class, 'store']);

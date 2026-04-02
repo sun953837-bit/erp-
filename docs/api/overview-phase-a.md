@@ -77,6 +77,20 @@ This document aligns API docs with the actual implementation for the current Sta
 - `POST /finance/refunds`
 - `GET /finance/reconciliations`
 
+### BI ETL (Stage-1 Minimal)
+
+- `GET /bi/etl/summary`
+- `POST /bi/etl/refresh`
+  - Full refresh: `mode=full`
+  - Incremental refresh: `mode=incremental`, `window_days=1..90`
+  - Refresh scope for Stage-1 theme tables:
+    - `dim_platform`, `dim_shop`, `dim_customer`, `dim_service`, `dim_date`
+    - `fact_service_orders`, `fact_after_sales`, `fact_settlements`, `fact_project_delivery`
+  - ETL run status is tracked in `bi_etl_runs`
+  - `fact_after_sales` source policy:
+    - `refund_record`: rows from `refund_records`
+    - `service_order_status`: fallback rows for `service_orders.status=after_sale` without refund records
+
 ## Implemented Python Sync Endpoint
 
 - `GET /internal/health`
@@ -98,3 +112,4 @@ This document aligns API docs with the actual implementation for the current Sta
 
 - Current APIs focus on sync scaffolding and product/shop mapping flow.
 - A minimal P1 subset is implemented: service-order status flow, auto receivable, payment/refund/reconciliation linkage.
+- BI is limited to minimal theme-table refresh only. No dashboards/report-design scope is included in current batch.

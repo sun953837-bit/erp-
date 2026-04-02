@@ -54,6 +54,19 @@ This document aligns API docs with the actual implementation for the current Sta
 - `GET /service-orders/{id}`
 - `PATCH /service-orders/{id}/status`
 
+Legacy write freeze:
+- when `FREEZE_LEGACY_SERVICE_ORDER_WRITE=true`, `POST /service-orders` returns `409 LEGACY_WRITE_FROZEN`
+- canonical write path is `POST /orders`
+
+### Orders (Canonical)
+
+- `GET /orders`
+- `POST /orders`
+- `GET /orders/{id}`
+- `PATCH /orders/{id}/status`
+- `GET /orders/goods`
+- `POST /orders/goods`
+
 ### Platform Mapping
 
 - `GET /platform-product-mappings`
@@ -113,9 +126,9 @@ This document aligns API docs with the actual implementation for the current Sta
 
 ### Order status update API
 
-- Legacy generic route `PATCH /orders/{id}/status` is not implemented.
-- Service-order status update is implemented as `PATCH /service-orders/{id}/status`.
-- `PUT /orders/{id}/status` is not documented as active in Stage-1.
+- Canonical route `PATCH /orders/{id}/status` is implemented.
+- Compatibility route `PATCH /service-orders/{id}/status` remains implemented for legacy service-order flow.
+- `PUT /orders/{id}/status` remains inactive.
 
 ### `finance/receivables`
 

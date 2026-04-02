@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\BiEtlController;
 use App\Http\Controllers\Api\ChannelAccountController;
 use App\Http\Controllers\Api\FinanceCenterController;
 use App\Http\Controllers\Api\HealthController;
+use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PlatformProductMappingController;
 use App\Http\Controllers\Api\ProductSkuController;
 use App\Http\Controllers\Api\ProductSpuController;
@@ -41,6 +42,13 @@ Route::get('/service-orders', [ServiceOrderController::class, 'index']);
 Route::post('/service-orders', [ServiceOrderController::class, 'store']);
 Route::get('/service-orders/{id}', [ServiceOrderController::class, 'show']);
 Route::patch('/service-orders/{id}/status', [ServiceOrderController::class, 'updateStatus']);
+
+Route::get('/orders', [OrderController::class, 'index']);
+Route::post('/orders', [OrderController::class, 'store']);
+Route::get('/orders/goods', [OrderController::class, 'indexGoods']);
+Route::post('/orders/goods', [OrderController::class, 'storeGoods']);
+Route::get('/orders/{id}', [OrderController::class, 'show']);
+Route::patch('/orders/{id}/status', [OrderController::class, 'updateStatus']);
 
 Route::get('/finance/receivables', [FinanceCenterController::class, 'receivables']);
 Route::get('/finance/payments', [FinanceCenterController::class, 'payments']);

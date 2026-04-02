@@ -46,12 +46,14 @@ Canonical names above are governance targets for next-stage closure and should b
 
 ## Marker Snapshot (Current)
 
-- `service_orders`: `implemented`
+- `orders`: `implemented` (canonical write path, `order_type=service|goods`)
+- `order_items`: `implemented`
+- `goods_order_fulfillments`: `implemented` (goods baseline, no inventory extension)
+- `service_orders`: `compatibility(read-write)` transitioning to `compatibility(read-only)` under freeze policy
 - `refund_records`: `implemented`
 - `receivable_records`: `implemented`
 - `projects` / `tickets`: `implemented`
 - `raw_orders` / `raw_refunds` / `raw_listings` / `raw_services`: `implemented`
 - `products_spu` / `products_sku`: `compatibility(read-only)` in Stage-1 scope freeze context
-- Canonical `orders` (goods + service unified): `planned`
 - Canonical `services` catalog domain: `planned`
 - Canonical `channel_listings` write path: `planned`

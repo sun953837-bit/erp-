@@ -33,6 +33,7 @@ Freeze implementation scope first, then continue closure work. No horizontal exp
 - Existing concrete implementation:
   - `apps/php-api` (Laravel APIs + migrations)
   - `apps/python-sync` (adapter/worker/scheduler skeleton with mock providers, including `xianyu` and `zbj`)
+  - Canonical order baseline (`orders`, `order_items`, `goods_order_fulfillments`) is available for Stage-1 convergence.
   - Raw ingest baseline for pull tasks (`raw_orders`, `raw_refunds`, `raw_listings`, `raw_services`) is available.
   - Service-order closure baseline is available (`service_orders`, `receivable_records`, `payment_records`, `refund_records`, `reconciliation_records`, `projects`, `tickets`).
 - Existing docs:

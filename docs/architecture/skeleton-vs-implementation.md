@@ -11,6 +11,10 @@
   - Raw channel mapping for orders/refunds is available through API/CLI scheduler.
   - Raw mapping logic is split into parser/status-mapper/domain services to keep channel-hub logic maintainable.
   - Minimal service-order and finance linkage is available (status machine + receivable/payment/refund/reconciliation APIs).
+  - Canonical order baseline is available:
+    - `orders` / `order_items` write path
+    - `goods_order_fulfillments` baseline table for goods flow reservation (no inventory extension)
+  - Legacy `/service-orders` write path can be frozen via env (`FREEZE_LEGACY_SERVICE_ORDER_WRITE=true`).
 - `apps/python-sync`
   - Worker/scheduler framework is present.
   - Provider adapters are mock implementations (`xianyu`, `zbj` included).

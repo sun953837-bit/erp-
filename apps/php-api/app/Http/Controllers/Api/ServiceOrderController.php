@@ -59,6 +59,16 @@ class ServiceOrderController extends Controller
 
     public function store(Request $request)
     {
+        $freezeLegacyWrite = filter_var((string) env('FREEZE_LEGACY_SERVICE_ORDER_WRITE', 'true'), FILTER_VALIDATE_BOOL);
+        if ($freezeLegacyWrite) {
+            return ApiResponse::error(
+                'LEGACY_WRITE_FROZEN',
+                'legacy /service-orders write path is frozen, please use /orders',
+                409,
+                ['canonical_write_path' => '/api/orders']
+            );
+        }
+
         $payload = $request->validate([
             'platform_code' => ['nullable', 'string', 'max:64'],
             'shop_id' => ['nullable', 'integer', 'exists:shops,id'],

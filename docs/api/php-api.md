@@ -42,6 +42,23 @@ Contract baseline for P0.5 is maintained in `docs/api/overview-phase-a.md`.
 - `GET /service-orders/{id}`
 - `PATCH /service-orders/{id}/status`
 
+`POST /service-orders` is now a frozen legacy write path when `FREEZE_LEGACY_SERVICE_ORDER_WRITE=true`:
+- returns `409 LEGACY_WRITE_FROZEN`
+- canonical write path is `POST /orders`
+
+## Orders (Canonical)
+- `GET /orders`
+- `POST /orders`
+- `GET /orders/{id}`
+- `PATCH /orders/{id}/status`
+- `GET /orders/goods`
+- `POST /orders/goods`
+
+Canonical rules:
+- `order_type` uses `service|goods`
+- `POST /orders` rejects frozen legacy alias fields (`service_order_id`, `goods_order_id`, etc.)
+- goods baseline uses `order_items` + `goods_order_fulfillments` only (no inventory extension in Stage-1)
+
 ## Platform Mapping
 - `GET /platform-product-mappings`
 - `POST /platform-product-mappings`
@@ -129,7 +146,7 @@ Raw mapping CLI + schedule:
 
 ## Legacy Contract Notes
 
-- `PATCH /orders/{id}/status` (legacy generic order route) is still not implemented.
+- `PATCH /orders/{id}/status` is implemented in canonical order path.
 - `PUT /orders/{id}/status` is not an active contract.
 
 ## Unified Response

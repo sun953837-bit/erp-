@@ -60,6 +60,7 @@ Contract baseline for P0.5 is maintained in `docs/api/overview-phase-a.md`.
 - `GET /orders/goods/fulfillments`
 - `PATCH /orders/goods/fulfillments/{id}/status`
 - `POST /orders/goods/fulfillments/{id}/writeback`
+- `POST /orders/goods/fulfillments/{id}/push-shipment`
 - `GET /orders/goods/after-sales`
 - `POST /orders/goods/after-sales`
 - `PATCH /orders/goods/after-sales/{id}/status`
@@ -74,6 +75,14 @@ Canonical rules:
   - reconciliation API/CLI:
     - `GET /api/orders/reconciliation/service`
     - `php artisan orders:service-reconcile --sample-limit=50`
+    - reconciliation filters:
+      - API query: `date_from`, `date_to`, `platform_code`, `shop_id|account_id`
+      - CLI options: `--date-from`, `--date-to`, `--platform-code`, `--shop-id`
+  - service canonical schema carries migration-phase linkage fields:
+    - `customer_id`
+    - `project_id`
+    - `ticket_id`
+  - finance write path updates canonical order `meta_json.finance_snapshot` for payment/refund/reconciliation linkage check
 
 ## Platform Mapping
 - `GET /platform-product-mappings`
@@ -149,11 +158,12 @@ Behavior:
     - full refresh (`mode=full`)
     - incremental refresh (`mode=incremental`, `window_days=1..90`)
   - Writes Stage-1 theme tables:
-    - `dim_platform`, `dim_shop`, `dim_customer`, `dim_service`, `dim_date`
-    - `fact_service_orders`, `fact_after_sales`, `fact_settlements`, `fact_project_delivery`
+    - `dim_platform`, `dim_shop`, `dim_customer`, `dim_service`, `dim_product`, `dim_date`
+    - `fact_service_orders`, `fact_goods_orders`, `fact_after_sales`, `fact_settlements`, `fact_project_delivery`
   - Service read source can switch with fallback:
     - `READ_SERVICE_FROM_CANONICAL_ORDERS`
     - `READ_SERVICE_FROM_CANONICAL_ORDERS_FALLBACK`
+  - monitor/summary/refresh payload includes `service_source_comparison` to compare legacy/canonical service read volumes and amount
   - ETL source/target connection can be split:
     - `BI_ETL_SOURCE_CONNECTION`
     - `BI_ETL_TARGET_CONNECTION`
@@ -189,6 +199,10 @@ Raw mapping CLI + schedule:
   - `RAW_MAPPING_AUTO_ENABLED`
   - `RAW_MAPPING_CRON`
   - `RAW_MAPPING_LIMIT`
+
+Dual-write repair CLI:
+- `php artisan orders:service-backfill-canonical`
+- optional one-off limit: `php artisan orders:service-backfill-canonical --limit=200`
 
 ## Legacy Contract Notes
 

@@ -9,6 +9,7 @@ Converge legacy `service_orders` into canonical `orders` with `order_type=servic
 - Canonical table: `orders`
   - `order_type` in `service|goods`
   - `legacy_service_order_id` keeps back-reference during migration
+  - dual-write linkage fields: `customer_id`, `project_id`, `ticket_id`
 - Canonical item table: `order_items`
 - Goods baseline fulfillment table: `goods_order_fulfillments`
 
@@ -25,8 +26,10 @@ Converge legacy `service_orders` into canonical `orders` with `order_type=servic
 - Compare row counts and key fields by daily reconciliation script.
   - Implemented:
     - dual-write service: `ServiceOrderDualWriteService`
+    - service order baseline item auto-sync: `order_items(item_type=service)`
+    - finance snapshot sync on canonical order: `meta_json.finance_snapshot`
     - reconciliation API: `GET /api/orders/reconciliation/service`
-    - reconciliation CLI: `php artisan orders:service-reconcile --sample-limit=50`
+    - reconciliation CLI: `php artisan orders:service-reconcile --sample-limit=50 [--date-from=YYYY-MM-DD --date-to=YYYY-MM-DD --platform-code=xianyu --shop-id=1]`
     - scheduled reconciliation cron:
       - `SERVICE_ORDER_RECON_AUTO_ENABLED`
       - `SERVICE_ORDER_RECON_CRON`

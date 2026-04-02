@@ -3,6 +3,8 @@
 use App\Services\Bi\BiEtlService;
 use App\Services\ChannelHub\RawChannelMappingService;
 use App\Services\Order\ServiceOrderReconciliationService;
+use App\Services\Order\ServiceOrderDualWriteService;
+use App\Models\ServiceOrder;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
@@ -60,10 +62,20 @@ Schedule::command('channel:map-raw --limit='.max(1, (int) env('RAW_MAPPING_LIMIT
     ->withoutOverlapping()
     ->when(static fn (): bool => filter_var((string) env('RAW_MAPPING_AUTO_ENABLED', 'true'), FILTER_VALIDATE_BOOL));
 
-Artisan::command('orders:service-reconcile {--sample-limit=50 : sample rows per mismatch category}', function (ServiceOrderReconciliationService $service) {
+Artisan::command('orders:service-reconcile
+    {--sample-limit=50 : sample rows per mismatch category}
+    {--date-from= : filter order created_at >= YYYY-MM-DD}
+    {--date-to= : filter order created_at <= YYYY-MM-DD}
+    {--platform-code= : filter by platform code}
+    {--shop-id= : filter by shop/account id}', function (ServiceOrderReconciliationService $service) {
     $sampleLimit = max(1, min(500, (int) $this->option('sample-limit')));
+    $shopId = $this->option('shop-id');
     $result = $service->reconcile([
         'sample_limit' => $sampleLimit,
+        'date_from' => $this->option('date-from') ?: null,
+        'date_to' => $this->option('date-to') ?: null,
+        'platform_code' => $this->option('platform-code') ?: null,
+        'shop_id' => $shopId !== null && $shopId !== '' ? (int) $shopId : null,
     ]);
     $this->info('Service order reconciliation completed.');
     $this->line(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
@@ -74,3 +86,43 @@ Schedule::command('orders:service-reconcile --sample-limit='.max(1, (int) env('S
     ->cron((string) env('SERVICE_ORDER_RECON_CRON', '35 2 * * *'))
     ->withoutOverlapping()
     ->when(static fn (): bool => filter_var((string) env('SERVICE_ORDER_RECON_AUTO_ENABLED', 'true'), FILTER_VALIDATE_BOOL));
+
+Artisan::command('orders:service-backfill-canonical {--limit=0 : limit records for one-off repair}', function (ServiceOrderDualWriteService $dualWrite) {
+    $limit = max(0, (int) $this->option('limit'));
+    $query = ServiceOrder::query()->orderBy('id');
+
+    if ($limit > 0) {
+        $query->limit($limit);
+        $orders = $query->get();
+        $processed = 0;
+        foreach ($orders as $order) {
+            $dualWrite->syncCanonicalFromServiceOrder($order);
+            $processed++;
+        }
+        $this->info('Service order canonical backfill completed.');
+        $this->line(json_encode([
+            'processed' => $processed,
+            'limit' => $limit,
+            'mode' => 'limited',
+            'generated_at' => now()->toDateTimeString(),
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        return 0;
+    }
+
+    $processed = 0;
+    ServiceOrder::query()->orderBy('id')->chunkById(200, function ($rows) use (&$processed, $dualWrite): void {
+        foreach ($rows as $order) {
+            $dualWrite->syncCanonicalFromServiceOrder($order);
+            $processed++;
+        }
+    });
+
+    $this->info('Service order canonical backfill completed.');
+    $this->line(json_encode([
+        'processed' => $processed,
+        'limit' => null,
+        'mode' => 'full',
+        'generated_at' => now()->toDateTimeString(),
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    return 0;
+})->describe('Backfill service_orders into canonical orders + service items + finance snapshot');

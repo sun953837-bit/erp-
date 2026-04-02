@@ -16,9 +16,11 @@
   - `dim_shop`
   - `dim_customer`
   - `dim_service`
+  - `dim_product`
   - `dim_date`
 - Facts:
   - `fact_service_orders`
+  - `fact_goods_orders`
   - `fact_after_sales`
   - `fact_settlements`
   - `fact_project_delivery`
@@ -34,6 +36,8 @@
 - Service source switch:
   - `READ_SERVICE_FROM_CANONICAL_ORDERS=true|false`
   - `READ_SERVICE_FROM_CANONICAL_ORDERS_FALLBACK=true|false`
+- Dual-source compare summary:
+  - `service_source_comparison` (from refresh/summary/monitor payload) to compare legacy `service_orders` and canonical `orders(order_type=service)`
 
 ## Quality & Delivery Signals
 
@@ -66,12 +70,17 @@
 - dimensions: platform/shop/date/refund_status/source_type
 - metrics: `refund_amount`
 
-3. Settlement delta trend
+3. Goods order trend
+- table: `fact_goods_orders`
+- dimensions: platform/shop/date/status/customer
+- metrics: `order_amount`, `item_count`
+
+4. Settlement delta trend
 - table: `fact_settlements`
 - dimensions: date/platform/shop/settlement_status
 - metrics: `delta_amount`
 
-4. Delivery closure
+5. Delivery closure
 - table: `fact_project_delivery`
 - dimensions: delivery_type/delivery_status/date/platform
 - metrics: `is_closed` rate

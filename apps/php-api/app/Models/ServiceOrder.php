@@ -17,6 +17,7 @@ class ServiceOrder extends Model
         'external_order_id',
         'service_name',
         'customer_name',
+        'customer_id',
         'currency',
         'amount',
         'status',

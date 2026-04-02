@@ -242,7 +242,11 @@ class RawChannelMappingService
         }
 
         $serviceName = trim((string) ($record['subject'] ?? $record['service_name'] ?? '渠道服务订单'));
-        $customerName = trim((string) ($record['buyer_id'] ?? $record['customer_name'] ?? ''));
+        $customerId = trim((string) ($record['customer_id'] ?? $record['buyer_id'] ?? $record['buyer_uid'] ?? ''));
+        $customerName = trim((string) ($record['customer_name'] ?? $record['buyer_name'] ?? ''));
+        if ($customerName === '' && $customerId !== '') {
+            $customerName = $customerId;
+        }
         $currency = strtoupper((string) ($record['currency'] ?? 'CNY'));
         $amount = round(max(0.0, (float) ($record['amount'] ?? 0)), 2);
         $targetStatus = $this->statusMapper->normalizeOrderStatus((string) ($record['status'] ?? 'pending'));
@@ -267,6 +271,7 @@ class RawChannelMappingService
 
         $order->service_name = $serviceName !== '' ? $serviceName : '渠道服务订单';
         $order->customer_name = $customerName !== '' ? $customerName : null;
+        $order->customer_id = $customerId !== '' ? $customerId : null;
         $order->currency = $currency;
         $order->amount = $amount;
 
@@ -309,7 +314,11 @@ class RawChannelMappingService
         if ($subject === '') {
             $subject = '渠道商品订单';
         }
-        $customerName = trim((string) ($record['buyer_id'] ?? $record['customer_name'] ?? ''));
+        $customerId = trim((string) ($record['customer_id'] ?? $record['buyer_id'] ?? $record['buyer_uid'] ?? ''));
+        $customerName = trim((string) ($record['customer_name'] ?? $record['buyer_name'] ?? ''));
+        if ($customerName === '' && $customerId !== '') {
+            $customerName = $customerId;
+        }
         $currency = strtoupper((string) ($record['currency'] ?? 'CNY'));
         $amount = round(max(0.0, (float) ($record['amount'] ?? 0)), 2);
         $targetStatus = $this->normalizeGoodsStatus((string) ($record['status'] ?? 'pending'));
@@ -336,6 +345,7 @@ class RawChannelMappingService
         $order->external_order_id = $externalOrderId;
         $order->subject = $subject;
         $order->customer_name = $customerName !== '' ? $customerName : null;
+        $order->customer_id = $customerId !== '' ? $customerId : null;
         $order->currency = $currency;
         $order->amount = $amount;
         $order->status = $targetStatus;

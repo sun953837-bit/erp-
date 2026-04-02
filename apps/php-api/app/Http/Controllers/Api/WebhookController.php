@@ -182,7 +182,7 @@ class WebhookController extends Controller
             }
             return ApiResponse::error('DB_ERROR', 'webhook persistence failed', 500);
         } catch (Throwable $e) { // unexpected transaction failure
-            return ApiResponse::error('PROCESSING_ERROR', $e->getMessage(), 500);
+            return ApiResponse::error('PROCESSING_ERROR', $this->clipErrorMessage($e->getMessage()), 500);
         }
 
         /** @var WebhookEvent $event */
@@ -277,7 +277,7 @@ class WebhookController extends Controller
                 ]
             );
 
-            return ApiResponse::error('PROCESSING_ERROR', $e->getMessage(), 500);
+            return ApiResponse::error('PROCESSING_ERROR', $this->clipErrorMessage($e->getMessage()), 500);
         }
     }
 

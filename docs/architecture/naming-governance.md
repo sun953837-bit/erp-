@@ -50,10 +50,13 @@ Canonical names above are governance targets for next-stage closure and should b
 - `order_items`: `implemented`
 - `goods_order_fulfillments`: `implemented` (goods baseline, no inventory extension)
 - `service_orders`: `compatibility(dual-write)` with legacy direct write frozen and reconciliation guard enabled
+- `service_orders`: `compatibility(primary-read + dual-write)` in Phase-B; no new write path may skip canonical `orders`
 - `refund_records`: `implemented`
 - `receivable_records`: `implemented`
 - `projects` / `tickets`: `implemented`
 - `raw_orders` / `raw_refunds` / `raw_listings` / `raw_services`: `implemented`
+- `raw_xianyu_*` / `raw_zbj_*` / `raw_webhook_events`: `compatibility(read-only views)`
+- `api_call_logs`: `compatibility(read-only view)` -> source `sync_receipt_logs`
 - `products_spu` / `products_sku`: `compatibility(read-only)` in Stage-1 scope freeze context
 - Canonical `services` catalog domain: `planned`
 - Canonical `channel_listings` write path: `planned`

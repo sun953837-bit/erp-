@@ -12,6 +12,20 @@ This document defines how channel raw data is mapped into ERP core tables in the
 - Planned:
   - `raw_services` -> `services`
 
+## Raw Compatibility Naming
+
+Current runtime write tables stay generic (`raw_orders`, `raw_refunds`, `raw_listings`, `raw_services`) for shared ingestion logic.
+To align Stage-1 platform governance names, read-compatible views are provided:
+
+- `raw_xianyu_orders`
+- `raw_xianyu_refunds`
+- `raw_xianyu_listings`
+- `raw_zbj_orders`
+- `raw_zbj_refunds`
+- `raw_zbj_services`
+- `raw_webhook_events`
+- `api_call_logs` (view on `sync_receipt_logs`)
+
 ## Processing Policy
 
 - Pull data must land in `raw_*` first.

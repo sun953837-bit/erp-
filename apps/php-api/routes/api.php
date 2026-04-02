@@ -53,6 +53,7 @@ Route::post('/orders/goods', [OrderController::class, 'storeGoods']);
 Route::get('/orders/goods/fulfillments', [GoodsFulfillmentController::class, 'index']);
 Route::patch('/orders/goods/fulfillments/{id}/status', [GoodsFulfillmentController::class, 'updateStatus']);
 Route::post('/orders/goods/fulfillments/{id}/writeback', [GoodsFulfillmentController::class, 'writebackPlaceholder']);
+Route::post('/orders/goods/fulfillments/{id}/push-shipment', [GoodsFulfillmentController::class, 'pushShipmentPlaceholder']);
 Route::get('/orders/goods/after-sales', [GoodsAfterSaleController::class, 'index']);
 Route::post('/orders/goods/after-sales', [GoodsAfterSaleController::class, 'store']);
 Route::patch('/orders/goods/after-sales/{id}/status', [GoodsAfterSaleController::class, 'updateStatus']);

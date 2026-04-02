@@ -98,6 +98,17 @@ class FinanceCenterController extends Controller
             );
             $receivable->save();
 
+            if (
+                in_array((string) $receivable->status, ['PARTIAL', 'PAID'], true)
+                && strtolower((string) $order->status) === 'pending'
+            ) {
+                $order->status = 'confirmed';
+                if ($order->confirmed_at === null) {
+                    $order->confirmed_at = now();
+                }
+                $order->save();
+            }
+
             ReconciliationRecord::query()->create([
                 'reconciliation_no' => sprintf('REC%s%s', now()->format('YmdHis'), strtoupper(Str::random(4))),
                 'service_order_id' => $order->id,
@@ -110,7 +121,8 @@ class FinanceCenterController extends Controller
             ]);
 
             if ($this->isDualWriteEnabled()) {
-                $dualWrite->syncCanonicalFromServiceOrder($order);
+                $canonical = $dualWrite->syncCanonicalFromServiceOrder($order);
+                $dualWrite->syncCanonicalFinanceSnapshot($order, $canonical);
             }
 
             return [
@@ -167,6 +179,14 @@ class FinanceCenterController extends Controller
                 $receivable->save();
             }
 
+            if (
+                in_array($refundStatus, ['APPROVED', 'PAID'], true)
+                && strtolower((string) $order->status) !== 'after_sale'
+            ) {
+                $order->status = 'after_sale';
+                $order->save();
+            }
+
             ReconciliationRecord::query()->create([
                 'reconciliation_no' => sprintf('REC%s%s', now()->format('YmdHis'), strtoupper(Str::random(4))),
                 'service_order_id' => $order->id,
@@ -179,7 +199,8 @@ class FinanceCenterController extends Controller
             ]);
 
             if ($this->isDualWriteEnabled()) {
-                $dualWrite->syncCanonicalFromServiceOrder($order);
+                $canonical = $dualWrite->syncCanonicalFromServiceOrder($order);
+                $dualWrite->syncCanonicalFinanceSnapshot($order, $canonical);
             }
 
             return [

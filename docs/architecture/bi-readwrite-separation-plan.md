@@ -31,6 +31,9 @@ Move BI refresh output from transactional write path toward configurable target 
 - API:
   - `GET /api/bi/etl/summary`
   - `GET /api/bi/etl/monitor`
+  - response carries:
+    - `service_source_comparison`
+    - `lag_seconds`
 - View:
   - `v_bi_etl_monitor`
 - Alert sinks:
@@ -44,3 +47,4 @@ Move BI refresh output from transactional write path toward configurable target 
 3. Trigger manual recover:
    - `php artisan bi:etl-recover`
 4. Validate `last_alert_level` and `consecutive_failures`.
+5. Validate `service_source_comparison.delta_count` and `delta_amount` remain within accepted thresholds before re-enabling canonical read.

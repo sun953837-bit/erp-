@@ -120,4 +120,47 @@ class GoodsFulfillmentController extends Controller
             'fulfillment' => $fulfillment->fresh('order'),
         ]);
     }
+
+    public function pushShipmentPlaceholder(Request $request, int $id)
+    {
+        $payload = $request->validate([
+            'carrier' => ['nullable', 'string', 'max:64'],
+            'tracking_no' => ['nullable', 'string', 'max:128'],
+            'channel_payload' => ['nullable', 'array'],
+            'note' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        /** @var GoodsOrderFulfillment|null $fulfillment */
+        $fulfillment = GoodsOrderFulfillment::query()->with('order')->find($id);
+        if (! $fulfillment) {
+            return ApiResponse::error('NOT_FOUND', 'goods fulfillment not found', 404);
+        }
+
+        $requestId = 'PSH-'.strtoupper(Str::random(12));
+        $meta = is_array($fulfillment->meta_json) ? $fulfillment->meta_json : [];
+        $meta['push_shipment_placeholder'] = [
+            'request_id' => $requestId,
+            'status' => 'QUEUED',
+            'queued_at' => now()->toDateTimeString(),
+            'carrier' => $payload['carrier'] ?? null,
+            'tracking_no' => $payload['tracking_no'] ?? null,
+            'channel_payload' => $payload['channel_payload'] ?? null,
+            'note' => $payload['note'] ?? null,
+        ];
+        $fulfillment->meta_json = $meta;
+
+        if (array_key_exists('carrier', $payload)) {
+            $fulfillment->carrier = $payload['carrier'] ?? null;
+        }
+        if (array_key_exists('tracking_no', $payload)) {
+            $fulfillment->tracking_no = $payload['tracking_no'] ?? null;
+        }
+        $fulfillment->save();
+
+        return ApiResponse::success([
+            'request_id' => $requestId,
+            'message' => 'goods shipment push placeholder queued',
+            'fulfillment' => $fulfillment->fresh('order'),
+        ]);
+    }
 }

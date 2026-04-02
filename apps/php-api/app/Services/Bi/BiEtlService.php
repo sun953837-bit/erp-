@@ -40,6 +40,10 @@ class BiEtlService
 
             $finishedAt = CarbonImmutable::now();
             $quality = $this->buildQualityMetrics($counts);
+            $comparisonSince = $effectiveMode === 'incremental'
+                ? CarbonImmutable::now()->subDays($windowDays)->startOfDay()
+                : null;
+            $serviceSourceComparison = $this->buildServiceSourceComparison($comparisonSince);
             $result = [
                 'mode' => $requestedMode,
                 'effective_mode' => $effectiveMode,
@@ -49,6 +53,7 @@ class BiEtlService
                 'finished_at' => $finishedAt->toDateTimeString(),
                 'counts' => $counts,
                 'quality' => $quality,
+                'service_source_comparison' => $serviceSourceComparison,
             ];
             $this->recordRun([
                 'last_mode' => $requestedMode,
@@ -77,12 +82,14 @@ class BiEtlService
                     'strategy_reason' => $strategyReason,
                     'quality' => $quality,
                     'counts' => $counts,
+                    'service_source_comparison' => $serviceSourceComparison,
                 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 payload: [
                     'mode' => $requestedMode,
                     'effective_mode' => $effectiveMode,
                     'quality' => $quality,
                     'counts' => $counts,
+                    'service_source_comparison' => $serviceSourceComparison,
                 ],
                 dedupeKey: sprintf('bi_etl:%s:%s', $quality['alert_level'], $finishedAt->format('YmdH')),
             );
@@ -185,8 +192,10 @@ class BiEtlService
             'dim_shop',
             'dim_customer',
             'dim_service',
+            'dim_product',
             'dim_date',
             'fact_service_orders',
+            'fact_goods_orders',
             'fact_after_sales',
             'fact_settlements',
             'fact_project_delivery',
@@ -201,10 +210,14 @@ class BiEtlService
             $counts[$table] = $this->targetTable($table)->count();
         }
 
+        $lastRun = $this->fetchRunSnapshot();
+
         return [
             'counts' => $counts,
-            'last_run' => $this->fetchRunSnapshot(),
+            'last_run' => $lastRun,
             'service_read_source' => $this->serviceReadSourceMode(),
+            'service_source_comparison' => $this->buildServiceSourceComparison(null),
+            'lag_seconds' => $this->calcLagSeconds($lastRun),
             'source_connection' => $this->resolvedSourceConnectionName(),
             'target_connection' => $this->resolvedTargetConnectionName(),
             'generated_at' => now()->toDateTimeString(),
@@ -238,14 +251,18 @@ class BiEtlService
                 ->all();
         }
 
+        $lastRun = $this->fetchRunSnapshot();
+
         return [
             'generated_at' => now()->toDateTimeString(),
             'service_read_source' => $this->serviceReadSourceMode(),
+            'service_source_comparison' => $this->buildServiceSourceComparison(null),
             'source_connection' => $this->resolvedSourceConnectionName(),
             'target_connection' => $this->resolvedTargetConnectionName(),
             'view_available' => $viewAvailable,
             'view_rows' => $viewRows,
-            'last_run' => $this->fetchRunSnapshot(),
+            'last_run' => $lastRun,
+            'lag_seconds' => $this->calcLagSeconds($lastRun),
             'recent_alerts' => $recentAlerts,
         ];
     }
@@ -259,8 +276,10 @@ class BiEtlService
             'dim_shop' => $this->loadDimShop(true),
             'dim_customer' => $this->loadDimCustomer(true),
             'dim_service' => $this->loadDimService(true),
+            'dim_product' => $this->loadDimProduct(true),
             'dim_date' => $this->loadDimDate(null, true),
             'fact_service_orders' => $this->loadFactServiceOrders(null),
+            'fact_goods_orders' => $this->loadFactGoodsOrders(null),
             'fact_after_sales' => $this->loadFactAfterSales(null),
             'fact_settlements' => $this->loadFactSettlements(null),
             'fact_project_delivery' => $this->loadFactProjectDelivery(null),
@@ -276,8 +295,10 @@ class BiEtlService
             'dim_shop' => $this->loadDimShop(false),
             'dim_customer' => $this->loadDimCustomer(false),
             'dim_service' => $this->loadDimService(false),
+            'dim_product' => $this->loadDimProduct(false),
             'dim_date' => $this->loadDimDate($since, false),
             'fact_service_orders' => $this->loadFactServiceOrders($since),
+            'fact_goods_orders' => $this->loadFactGoodsOrders($since),
             'fact_after_sales' => $this->loadFactAfterSales($since),
             'fact_settlements' => $this->loadFactSettlements($since),
             'fact_project_delivery' => $this->loadFactProjectDelivery($since),
@@ -290,8 +311,10 @@ class BiEtlService
             'fact_project_delivery',
             'fact_settlements',
             'fact_after_sales',
+            'fact_goods_orders',
             'fact_service_orders',
             'dim_date',
+            'dim_product',
             'dim_service',
             'dim_customer',
             'dim_shop',
@@ -458,6 +481,58 @@ class BiEtlService
                 $rows,
                 ['service_name'],
                 ['updated_at']
+            );
+        }
+
+        return count($rows);
+    }
+
+    private function loadDimProduct(bool $full): int
+    {
+        if (! $this->sourceSchema()->hasTable('products_sku')) {
+            return 0;
+        }
+
+        $query = $this->sourceTable('products_sku as sku')
+            ->leftJoin('products_spu as spu', 'spu.id', '=', 'sku.spu_id')
+            ->select([
+                'sku.id as product_id',
+                'sku.spu_id',
+                'sku.sku_code',
+                'sku.sku_name as product_name',
+                'spu.brand',
+                'spu.category_name',
+                'sku.status',
+            ])
+            ->orderBy('sku.id');
+
+        $products = $query->get();
+        if ($products->isEmpty()) {
+            return 0;
+        }
+
+        $now = now();
+        $rows = $products->map(static fn (object $product): array => [
+            'product_id' => (int) $product->product_id,
+            'spu_id' => $product->spu_id !== null ? (int) $product->spu_id : null,
+            'sku_code' => $product->sku_code !== null ? (string) $product->sku_code : null,
+            'product_name' => (string) $product->product_name,
+            'brand' => $product->brand !== null ? (string) $product->brand : null,
+            'category_name' => $product->category_name !== null ? (string) $product->category_name : null,
+            'status' => (string) $product->status,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ])->all();
+
+        if ($full) {
+            $this->targetTable('dim_product')->delete();
+            $this->bulkInsert('dim_product', $rows);
+        } else {
+            $this->bulkUpsert(
+                'dim_product',
+                $rows,
+                ['sku_code'],
+                ['product_id', 'spu_id', 'product_name', 'brand', 'category_name', 'status', 'updated_at']
             );
         }
 
@@ -717,6 +792,119 @@ class BiEtlService
         }
 
         $this->bulkInsert('fact_service_orders', $rows);
+        return count($rows);
+    }
+
+    private function loadFactGoodsOrders(?CarbonImmutable $since): int
+    {
+        if (! $this->sourceSchema()->hasTable('orders')) {
+            return 0;
+        }
+
+        $changedOrderIds = null;
+        if ($since !== null) {
+            $changedOrderIds = collect()
+                ->merge(
+                    $this->sourceTable('orders')
+                        ->where('order_type', 'goods')
+                        ->where(function (Builder $query) use ($since): void {
+                            $query->where('created_at', '>=', $since)
+                                ->orWhere('updated_at', '>=', $since)
+                                ->orWhere('confirmed_at', '>=', $since)
+                                ->orWhere('completed_at', '>=', $since);
+                        })
+                        ->pluck('id')
+                        ->all()
+                )
+                ->merge(
+                    $this->sourceTable('order_items')
+                        ->where('item_type', 'goods')
+                        ->where(function (Builder $query) use ($since): void {
+                            $query->where('created_at', '>=', $since)
+                                ->orWhere('updated_at', '>=', $since);
+                        })
+                        ->pluck('order_id')
+                        ->all()
+                )
+                ->filter(static fn (mixed $value): bool => $value !== null)
+                ->map(static fn (mixed $value): int => (int) $value)
+                ->unique()
+                ->values()
+                ->all();
+
+            if (count($changedOrderIds) === 0) {
+                return 0;
+            }
+        }
+
+        $itemCountByOrder = $this->sourceTable('order_items')
+            ->select([
+                'order_id',
+                DB::raw('SUM(quantity) AS total_quantity'),
+            ])
+            ->where('item_type', 'goods')
+            ->when($changedOrderIds !== null, function ($query) use ($changedOrderIds): void {
+                $query->whereIn('order_id', $changedOrderIds);
+            })
+            ->groupBy('order_id')
+            ->get()
+            ->pluck('total_quantity', 'order_id');
+
+        $ordersQuery = $this->sourceTable('orders')
+            ->where('order_type', 'goods')
+            ->select([
+                'id as goods_order_id',
+                'order_no',
+                'platform_code',
+                'shop_id',
+                'customer_name',
+                'customer_id',
+                'status',
+                'currency',
+                'amount',
+                'created_at',
+                'confirmed_at',
+                'completed_at',
+            ])
+            ->orderBy('id');
+
+        if ($changedOrderIds !== null) {
+            $ordersQuery->whereIn('id', $changedOrderIds);
+        }
+        $orders = $ordersQuery->get();
+
+        if ($orders->isEmpty()) {
+            return 0;
+        }
+
+        if ($changedOrderIds !== null) {
+            $this->deleteByIds('fact_goods_orders', 'goods_order_id', $changedOrderIds);
+        }
+
+        $now = now();
+        $rows = [];
+        foreach ($orders as $order) {
+            $goodsOrderId = (int) $order->goods_order_id;
+            $rows[] = [
+                'goods_order_id' => $goodsOrderId,
+                'order_no' => (string) $order->order_no,
+                'platform_code' => $this->nullableString($order->platform_code),
+                'shop_id' => $order->shop_id !== null ? (int) $order->shop_id : null,
+                'customer_name' => $this->nullableString($order->customer_name),
+                'customer_id' => $this->nullableString($order->customer_id),
+                'status' => (string) $order->status,
+                'currency' => (string) $order->currency,
+                'order_amount' => round((float) $order->amount, 2),
+                'item_count' => max(0, (int) ($itemCountByOrder->get($goodsOrderId) ?? 0)),
+                'date_key_created' => $this->toDateKey($order->created_at),
+                'date_key_confirmed' => $this->toDateKey($order->confirmed_at),
+                'date_key_completed' => $this->toDateKey($order->completed_at),
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        $this->bulkInsert('fact_goods_orders', $rows);
         return count($rows);
     }
 
@@ -1275,6 +1463,99 @@ class BiEtlService
                 ->whereIn('source_id', $chunk)
                 ->delete();
         }
+    }
+
+    private function buildServiceSourceComparison(?CarbonImmutable $since): array
+    {
+        $legacyAvailable = $this->sourceSchema()->hasTable('service_orders');
+        $canonicalAvailable = $this->sourceSchema()->hasTable('orders');
+
+        $legacyCount = 0;
+        $legacyAmount = 0.0;
+        if ($legacyAvailable) {
+            $legacySummary = $this->sourceTable('service_orders')
+                ->when($since !== null, function ($query) use ($since): void {
+                    $query->where('created_at', '>=', $since);
+                })
+                ->select([
+                    DB::raw('COUNT(*) AS total_count'),
+                    DB::raw('COALESCE(SUM(amount), 0) AS total_amount'),
+                ])
+                ->first();
+            $legacyCount = (int) ($legacySummary->total_count ?? 0);
+            $legacyAmount = round((float) ($legacySummary->total_amount ?? 0), 2);
+        }
+
+        $canonicalCount = 0;
+        $canonicalAmount = 0.0;
+        if ($canonicalAvailable) {
+            $canonicalSummary = $this->sourceTable('orders')
+                ->where('order_type', 'service')
+                ->when($since !== null, function ($query) use ($since): void {
+                    $query->where('created_at', '>=', $since);
+                })
+                ->select([
+                    DB::raw('COUNT(*) AS total_count'),
+                    DB::raw('COALESCE(SUM(amount), 0) AS total_amount'),
+                ])
+                ->first();
+            $canonicalCount = (int) ($canonicalSummary->total_count ?? 0);
+            $canonicalAmount = round((float) ($canonicalSummary->total_amount ?? 0), 2);
+        }
+
+        $linkedCount = 0;
+        if ($legacyAvailable && $canonicalAvailable) {
+            $linkedCount = $this->sourceTable('service_orders as so')
+                ->join('orders as o', function ($join): void {
+                    $join->on('o.legacy_service_order_id', '=', 'so.id')
+                        ->where('o.order_type', '=', 'service');
+                })
+                ->when($since !== null, function ($query) use ($since): void {
+                    $query->where(function (Builder $inner) use ($since): void {
+                        $inner->where('so.created_at', '>=', $since)
+                            ->orWhere('o.created_at', '>=', $since);
+                    });
+                })
+                ->count();
+        }
+
+        $deltaAmount = round($canonicalAmount - $legacyAmount, 2);
+        $deltaCount = $canonicalCount - $legacyCount;
+
+        return [
+            'window_since' => $since?->toDateTimeString(),
+            'legacy_service_orders' => [
+                'available' => $legacyAvailable,
+                'count' => $legacyCount,
+                'amount' => $legacyAmount,
+            ],
+            'canonical_orders' => [
+                'available' => $canonicalAvailable,
+                'count' => $canonicalCount,
+                'amount' => $canonicalAmount,
+            ],
+            'linked_count' => $linkedCount,
+            'delta_count' => $deltaCount,
+            'delta_amount' => $deltaAmount,
+            'count_balanced' => $deltaCount === 0,
+            'amount_balanced' => abs($deltaAmount) < 0.00001,
+        ];
+    }
+
+    private function calcLagSeconds(array $snapshot): ?int
+    {
+        $lastSuccess = trim((string) ($snapshot['last_success_at'] ?? ''));
+        if ($lastSuccess === '') {
+            return null;
+        }
+
+        try {
+            $last = CarbonImmutable::parse($lastSuccess);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return max(0, (int) $last->diffInSeconds(CarbonImmutable::now()));
     }
 
     private function resolveRefreshMode(string $requestedMode, int $windowDays, array $runSnapshot): array

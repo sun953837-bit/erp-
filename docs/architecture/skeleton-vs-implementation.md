@@ -9,6 +9,7 @@
   - Sync task creation/list/retry and receipt query are available.
   - Manual run entry and webhook intake (signature + idempotency + failure log) are available.
   - Raw channel mapping for orders/refunds is available through API/CLI scheduler.
+  - Raw mapping logic is split into parser/status-mapper/domain services to keep channel-hub logic maintainable.
   - Minimal service-order and finance linkage is available (status machine + receivable/payment/refund/reconciliation APIs).
 - `apps/python-sync`
   - Worker/scheduler framework is present.

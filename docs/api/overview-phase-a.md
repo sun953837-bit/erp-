@@ -67,6 +67,7 @@ This document aligns API docs with the actual implementation for the current Sta
 - `POST /sync-tasks/{id}/run`
 - `POST /sync-tasks/{id}/retry`
 - `GET /sync-tasks/{id}/receipts`
+  - manual run endpoint now attempts worker dispatch via python-sync internal trigger URL
 
 ### Webhooks
 

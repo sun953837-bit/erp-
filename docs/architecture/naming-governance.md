@@ -43,3 +43,15 @@ Canonical names above are governance targets for next-stage closure and should b
   - `implemented`
   - `compatibility(read-only)`
   - `planned`
+
+## Marker Snapshot (Current)
+
+- `service_orders`: `implemented`
+- `refund_records`: `implemented`
+- `receivable_records`: `implemented`
+- `projects` / `tickets`: `implemented`
+- `raw_orders` / `raw_refunds` / `raw_listings` / `raw_services`: `implemented`
+- `products_spu` / `products_sku`: `compatibility(read-only)` in Stage-1 scope freeze context
+- Canonical `orders` (goods + service unified): `planned`
+- Canonical `services` catalog domain: `planned`
+- Canonical `channel_listings` write path: `planned`

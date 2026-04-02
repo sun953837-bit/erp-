@@ -54,6 +54,11 @@ Contract baseline for P0.5 is maintained in `docs/api/overview-phase-a.md`.
 - `POST /sync-tasks/{id}/retry`
 - `GET /sync-tasks/{id}/receipts`
 
+`POST /sync-tasks/{id}/run` behavior:
+- marks task for immediate execution (`next_retry_at=now`)
+- attempts to trigger python-sync worker once via internal URL (`PYTHON_SYNC_INTERNAL_URL`)
+- returns both task snapshot and dispatch result
+
 `task_type` currently supported:
 
 - `product_publish`

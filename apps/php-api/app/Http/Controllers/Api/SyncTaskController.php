@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\SyncTask;
+use App\Services\SyncTask\SyncTaskRunDispatcher;
 use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -131,7 +132,7 @@ class SyncTaskController extends Controller
         return ApiResponse::success($task);
     }
 
-    public function run(int $id)
+    public function run(int $id, SyncTaskRunDispatcher $dispatcher)
     {
         $task = SyncTask::query()->find($id);
         if (! $task) {
@@ -155,6 +156,11 @@ class SyncTaskController extends Controller
         $task->updated_at = Carbon::now();
         $task->save();
 
-        return ApiResponse::success($task, 'task queued for immediate execution');
+        $dispatchResult = $dispatcher->triggerWorker();
+
+        return ApiResponse::success([
+            'task' => $task,
+            'dispatch' => $dispatchResult,
+        ], 'task queued for immediate execution');
     }
 }

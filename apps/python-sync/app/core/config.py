@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     xianyu_app_key: str = ""
     xianyu_http_timeout_seconds: float = 8.0
     xianyu_orders_extra_params_json: str = ""
+    xianyu_refunds_source_mode: str = "mock"
+    xianyu_refunds_endpoint: str = ""
+    xianyu_refunds_extra_params_json: str = ""
+    xianyu_listings_source_mode: str = "mock"
+    xianyu_listings_endpoint: str = ""
+    xianyu_listings_extra_params_json: str = ""
 
     zbj_orders_source_mode: str = "mock"
     zbj_orders_endpoint: str = ""
@@ -29,6 +35,17 @@ class Settings(BaseSettings):
     zbj_app_key: str = ""
     zbj_http_timeout_seconds: float = 8.0
     zbj_orders_extra_params_json: str = ""
+    zbj_refunds_source_mode: str = "mock"
+    zbj_refunds_endpoint: str = ""
+    zbj_refunds_extra_params_json: str = ""
+    zbj_services_source_mode: str = "mock"
+    zbj_services_endpoint: str = ""
+    zbj_services_extra_params_json: str = ""
+
+    channel_account_sync_enabled: bool = True
+    channel_account_sync_timeout_seconds: float = 2.0
+    channel_account_sync_internal_token: str = ""
+    php_api_base_url: str = "http://localhost:8000"
 
     model_config = SettingsConfigDict(
         env_file=".env",

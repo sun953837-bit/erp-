@@ -14,9 +14,11 @@
 - `apps/python-sync`
   - Worker/scheduler framework is present.
   - Provider adapters are mock implementations (`xianyu`, `zbj` included).
-  - `xianyu/zbj pull_orders` can be switched to HTTP source mode via env config (other providers remain mock).
+  - `xianyu` supports HTTP source mode for `pull_orders/pull_refunds/pull_listings`.
+  - `zbj` supports HTTP source mode for `pull_orders/pull_refunds/pull_services`.
   - Pull-task raw persistence writes into `raw_orders` / `raw_refunds` / `raw_listings` / `raw_services`.
   - Pull-task raw ingest now persists one `raw_*` row per `records[]` item when batch payload is returned.
+  - Worker can write back channel-account auth status (`EXPIRED`/`REVOKED`) to PHP API when adapter returns auth-failure signals.
 - `docs/api`, `docs/architecture`
   - Documentation base exists and can be aligned with runtime truth.
 

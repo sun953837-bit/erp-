@@ -19,6 +19,7 @@ from app.services.sync_executor import (
     create_receipt,
     execute_task_action,
 )
+from app.services.channel_account_sync import maybe_write_back_auth_status
 from app.services.sync_state_machine import (
     InvalidStatusTransitionError,
     SyncStateMachine,
@@ -90,6 +91,10 @@ def _process_task(task_id: int) -> None:
         adapter_payload["task_no"] = task.task_no
 
         endpoint, result = execute_task_action(task, adapter_payload)
+        channel_account_sync_result = maybe_write_back_auth_status(task, result)
+        if channel_account_sync_result is not None:
+            result = dict(result)
+            result["channel_account_sync"] = channel_account_sync_result
 
         response_log = create_receipt(
             sync_task_id=task.id,

@@ -14,6 +14,7 @@ This document defines how channel raw data is mapped into ERP core tables in the
 ## Processing Policy
 
 - Pull data must land in `raw_*` first.
+- Python worker ingests pull payload as one raw row per record when provider returns `records[]`.
 - Mapping reads only `mapped_status = PENDING` rows.
 - Mapping writes back status:
   - `MAPPED`

@@ -15,22 +15,73 @@ class XianyuAdapter(XianyuMockAdapter):
     provider_name = "xianyu"
 
     def pull_orders(self, payload: dict[str, Any]) -> dict[str, Any]:
-        source_mode = (settings.xianyu_orders_source_mode or "mock").strip().lower()
-        if source_mode != "http":
-            return super().pull_orders(payload)
+        return self._pull_with_http(
+            payload=payload,
+            action="pull_orders",
+            source_mode=settings.xianyu_orders_source_mode,
+            endpoint=settings.xianyu_orders_endpoint,
+            extra_params_json=settings.xianyu_orders_extra_params_json,
+            error_code="XY_PULL_ORDERS_ERROR",
+            normalize_record=self._normalize_order_record,
+            id_keys=["external_order_id", "order_id", "id", "biz_order_id", "trade_no"],
+            fallback=super().pull_orders,
+        )
+
+    def pull_refunds(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._pull_with_http(
+            payload=payload,
+            action="pull_refunds",
+            source_mode=settings.xianyu_refunds_source_mode,
+            endpoint=settings.xianyu_refunds_endpoint,
+            extra_params_json=settings.xianyu_refunds_extra_params_json,
+            error_code="XY_PULL_REFUNDS_ERROR",
+            normalize_record=self._normalize_refund_record,
+            id_keys=["external_refund_id", "refund_id", "id"],
+            fallback=super().pull_refunds,
+        )
+
+    def pull_listings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._pull_with_http(
+            payload=payload,
+            action="pull_listings",
+            source_mode=settings.xianyu_listings_source_mode,
+            endpoint=settings.xianyu_listings_endpoint,
+            extra_params_json=settings.xianyu_listings_extra_params_json,
+            error_code="XY_PULL_LISTINGS_ERROR",
+            normalize_record=self._normalize_listing_record,
+            id_keys=["external_listing_id", "listing_id", "id"],
+            fallback=super().pull_listings,
+        )
+
+    def _pull_with_http(
+        self,
+        *,
+        payload: dict[str, Any],
+        action: str,
+        source_mode: str,
+        endpoint: str,
+        extra_params_json: str,
+        error_code: str,
+        normalize_record,
+        id_keys: list[str],
+        fallback,
+    ) -> dict[str, Any]:
+        mode = (source_mode or "mock").strip().lower()
+        if mode != "http":
+            return fallback(payload)
 
         try:
-            records, meta = self._fetch_order_records(payload)
+            records, meta = self._fetch_records(payload, endpoint, extra_params_json, id_keys, normalize_record)
             return self.make_response(
                 success=True,
                 accepted=False,
                 final=True,
                 code="SUCCESS" if records else "SUCCESS_NO_DATA",
-                message=f"xianyu pull_orders fetched {len(records)} records from http source",
-                external_id=self._resolve_external_id(payload, records),
+                message=f"xianyu {action} fetched {len(records)} records from http source",
+                external_id=self._resolve_external_id(payload, records, id_keys),
                 raw_payload={
                     "provider": self.provider_name,
-                    "action": "pull_orders",
+                    "action": action,
                     "source": "http",
                     "records": records,
                     "meta": meta,
@@ -38,31 +89,38 @@ class XianyuAdapter(XianyuMockAdapter):
                 },
             )
         except Exception as exc:  # noqa: BLE001
-            message = f"xianyu pull_orders http source failed: {exc}"
+            message = f"xianyu {action} http source failed: {exc}"
             return self.make_response(
                 success=False,
                 accepted=False,
                 final=True,
-                code="XY_PULL_ORDERS_ERROR",
+                code=error_code,
                 message=message[:500],
                 external_id=self._build_external_id(payload),
                 raw_payload={
                     "provider": self.provider_name,
-                    "action": "pull_orders",
+                    "action": action,
                     "source": "http",
                     "error": str(exc)[:1000],
                 },
             )
 
-    def _fetch_order_records(self, payload: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        endpoint = (settings.xianyu_orders_endpoint or "").strip()
-        if endpoint == "":
-            raise ValueError("XIANYU_ORDERS_ENDPOINT is empty")
+    def _fetch_records(
+        self,
+        payload: dict[str, Any],
+        endpoint: str,
+        extra_params_json: str,
+        id_keys: list[str],
+        normalize_record,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        endpoint_value = (endpoint or "").strip()
+        if endpoint_value == "":
+            raise ValueError("pull endpoint is empty")
 
-        query = self._build_query_params(payload)
-        request_url = endpoint
+        query = self._build_query_params(payload, extra_params_json)
+        request_url = endpoint_value
         if query:
-            request_url = f"{endpoint}{'&' if '?' in endpoint else '?'}{urlencode(query)}"
+            request_url = f"{endpoint_value}{'&' if '?' in endpoint_value else '?'}{urlencode(query)}"
 
         headers = {
             "Accept": "application/json",
@@ -98,7 +156,7 @@ class XianyuAdapter(XianyuMockAdapter):
         records = self._extract_records(decoded)
         normalized = []
         for record in records:
-            item = self._normalize_order_record(record)
+            item = normalize_record(record)
             if item is not None:
                 normalized.append(item)
 
@@ -106,25 +164,26 @@ class XianyuAdapter(XianyuMockAdapter):
             "http_status": http_status,
             "request_url": request_url,
             "record_count": len(normalized),
+            "id_keys": id_keys,
         }
         return normalized, meta
 
-    def _build_query_params(self, payload: dict[str, Any]) -> dict[str, str]:
+    def _build_query_params(self, payload: dict[str, Any], raw_extra: str) -> dict[str, str]:
         query: dict[str, str] = {}
         for key in ["since", "until", "cursor", "page", "page_size", "shop_id", "site_code", "biz_id"]:
             value = payload.get(key)
             if value is not None and value != "":
                 query[key] = str(value)
 
-        raw_extra = (settings.xianyu_orders_extra_params_json or "").strip()
-        if raw_extra != "":
+        extra_text = (raw_extra or "").strip()
+        if extra_text != "":
             try:
-                parsed_extra = json.loads(raw_extra)
+                parsed_extra = json.loads(extra_text)
             except json.JSONDecodeError as exc:
-                raise ValueError("XIANYU_ORDERS_EXTRA_PARAMS_JSON is not valid json object") from exc
+                raise ValueError("extra params json is not valid json object") from exc
 
             if not isinstance(parsed_extra, dict):
-                raise ValueError("XIANYU_ORDERS_EXTRA_PARAMS_JSON must be json object")
+                raise ValueError("extra params json must be json object")
 
             for key, value in parsed_extra.items():
                 if value is not None and value != "" and key not in query:
@@ -132,7 +191,8 @@ class XianyuAdapter(XianyuMockAdapter):
 
         return query
 
-    def _extract_records(self, decoded: Any) -> list[dict[str, Any]]:
+    @staticmethod
+    def _extract_records(decoded: Any) -> list[dict[str, Any]]:
         if isinstance(decoded, list):
             return [item for item in decoded if isinstance(item, dict)]
 
@@ -182,11 +242,52 @@ class XianyuAdapter(XianyuMockAdapter):
             "source_record": record,
         }
 
-    def _resolve_external_id(self, payload: dict[str, Any], records: list[dict[str, Any]]) -> str:
+    def _normalize_refund_record(self, record: dict[str, Any]) -> dict[str, Any] | None:
+        external_refund_id = self._pick_first(record, ["external_refund_id", "refund_id", "id"])
+        if external_refund_id == "":
+            return None
+
+        amount_raw = self._pick_first(record, ["amount", "refund_amount", "price"])
+        amount = self._parse_amount(amount_raw)
+
+        return {
+            "external_refund_id": external_refund_id,
+            "external_order_id": self._pick_first(
+                record,
+                ["external_order_id", "order_id", "biz_order_id", "trade_no"],
+            ),
+            "reason": self._pick_first(record, ["reason", "refund_reason", "remark"]),
+            "amount": amount,
+            "currency": (self._pick_first(record, ["currency"]) or "CNY").upper(),
+            "status": self._pick_first(record, ["status", "refund_status", "state"]) or "pending",
+            "refunded_at": self._pick_first(record, ["refunded_at", "refund_time", "updated_at"]),
+            "source_record": record,
+        }
+
+    def _normalize_listing_record(self, record: dict[str, Any]) -> dict[str, Any] | None:
+        external_listing_id = self._pick_first(record, ["external_listing_id", "listing_id", "id"])
+        if external_listing_id == "":
+            return None
+
+        price_raw = self._pick_first(record, ["price", "amount", "list_price"])
+        price = self._parse_amount(price_raw)
+
+        return {
+            "external_listing_id": external_listing_id,
+            "title": self._pick_first(record, ["title", "subject", "name"]),
+            "listing_type": self._pick_first(record, ["listing_type", "biz_type"]) or "service",
+            "price": price,
+            "currency": (self._pick_first(record, ["currency"]) or "CNY").upper(),
+            "status": self._pick_first(record, ["status", "listing_status", "state"]) or "online",
+            "source_record": record,
+        }
+
+    def _resolve_external_id(self, payload: dict[str, Any], records: list[dict[str, Any]], id_keys: list[str]) -> str:
         if records:
-            first = records[0].get("external_order_id")
-            if isinstance(first, str) and first != "":
-                return first
+            for key in id_keys:
+                first = records[0].get(key)
+                if isinstance(first, str) and first != "":
+                    return first
         return self._build_external_id(payload)
 
     @staticmethod

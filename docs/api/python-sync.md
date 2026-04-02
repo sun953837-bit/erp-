@@ -14,6 +14,8 @@ Base URL: `http://localhost:8100`
   - Each row payload keeps single-record shape (`raw_payload.records=[record]`) for deterministic mapping.
 - Advance state by state-machine rules.
 - Do not write directly into ERP business tables for pull flows; raw ingest first, then mapped by PHP channel-hub mapping job.
+- When adapter result indicates auth expiration/revoke, worker writes back channel account auth status to PHP API endpoint:
+  - `PATCH /api/channel-accounts/by-shop/{shopId}/auth-status`
 
 ## Polling Scheduler Responsibilities
 - Scan `ACCEPTED` tasks.
@@ -29,14 +31,18 @@ Base URL: `http://localhost:8100`
 - xianyu_mock
 - zbj_mock
 
-## Xianyu/ZBJ Pull Orders Source Mode
+## Xianyu/ZBJ Pull Source Mode
 
-`xianyu` and `zbj` adapters support configurable source mode for `pull_orders`:
+`xianyu` and `zbj` adapters support configurable source mode for pull actions:
 
 - `XIANYU_ORDERS_SOURCE_MODE=mock` (default): keep existing mock records behavior.
 - `XIANYU_ORDERS_SOURCE_MODE=http`: fetch from external HTTP endpoint and normalize into Stage-1 raw format.
+- `XIANYU_REFUNDS_SOURCE_MODE=mock|http`
+- `XIANYU_LISTINGS_SOURCE_MODE=mock|http`
 - `ZBJ_ORDERS_SOURCE_MODE=mock` (default): keep existing mock records behavior.
 - `ZBJ_ORDERS_SOURCE_MODE=http`: fetch from external HTTP endpoint and normalize into Stage-1 raw format.
+- `ZBJ_REFUNDS_SOURCE_MODE=mock|http`
+- `ZBJ_SERVICES_SOURCE_MODE=mock|http`
 
 Related env vars:
 
@@ -45,11 +51,26 @@ Related env vars:
 - `XIANYU_APP_KEY` (optional, `X-App-Key`)
 - `XIANYU_HTTP_TIMEOUT_SECONDS`
 - `XIANYU_ORDERS_EXTRA_PARAMS_JSON` (optional JSON object merged into query params)
+- `XIANYU_REFUNDS_ENDPOINT`
+- `XIANYU_REFUNDS_EXTRA_PARAMS_JSON`
+- `XIANYU_LISTINGS_ENDPOINT`
+- `XIANYU_LISTINGS_EXTRA_PARAMS_JSON`
 - `ZBJ_ORDERS_ENDPOINT`
 - `ZBJ_ACCESS_TOKEN` (optional, `Authorization: Bearer`)
 - `ZBJ_APP_KEY` (optional, `X-App-Key`)
 - `ZBJ_HTTP_TIMEOUT_SECONDS`
 - `ZBJ_ORDERS_EXTRA_PARAMS_JSON` (optional JSON object merged into query params)
+- `ZBJ_REFUNDS_ENDPOINT`
+- `ZBJ_REFUNDS_EXTRA_PARAMS_JSON`
+- `ZBJ_SERVICES_ENDPOINT`
+- `ZBJ_SERVICES_EXTRA_PARAMS_JSON`
+
+Channel-account auth writeback env vars:
+
+- `CHANNEL_ACCOUNT_SYNC_ENABLED`
+- `CHANNEL_ACCOUNT_SYNC_TIMEOUT_SECONDS`
+- `CHANNEL_ACCOUNT_SYNC_INTERNAL_TOKEN` (optional header passthrough)
+- `PHP_API_BASE_URL`
 
 `payload.mock_mode` options:
 - `success_immediate`

@@ -2,7 +2,9 @@
 
 ## Data Source
 
-- DB: MySQL (same as ERP transactional database)
+- DB:
+  - source (transactional): controlled by `BI_ETL_SOURCE_CONNECTION` (fallback app default)
+  - target (theme tables): controlled by `BI_ETL_TARGET_CONNECTION` (fallback source connection)
 - Recommended account: read-only BI user
 - Charset: `utf8mb4`
 - Timezone: UTC (convert in report layer if needed)
@@ -29,6 +31,9 @@
 - Scheduler:
   - `bi:etl-refresh --mode=stage1`
   - `bi:etl-recover` for failure compensation
+- Service source switch:
+  - `READ_SERVICE_FROM_CANONICAL_ORDERS=true|false`
+  - `READ_SERVICE_FROM_CANONICAL_ORDERS_FALLBACK=true|false`
 
 ## Quality & Delivery Signals
 
@@ -44,6 +49,10 @@
 - Alert sink:
   - `notifications` (`biz_type=bi_etl`)
   - `audit_logs` (`action=bi_etl_alert_emitted`)
+- Monitor API:
+  - `GET /api/bi/etl/monitor`
+- Monitor view:
+  - `v_bi_etl_monitor`
 
 ## Suggested Report Datasets
 
@@ -76,3 +85,8 @@
 2. If ETL fails:
 - call `POST /api/bi/etl/recover` or run `php artisan bi:etl-recover`.
 - confirm new successful run before refreshing report cache.
+
+3. Read-only account and schema:
+- Suggested read-only schema marker: `BI_READONLY_SCHEMA` (default `bi_readonly`)
+- Suggested read-only username marker: `BI_READONLY_USERNAME` (default `bi_reader`)
+- FineReport connection should only point to theme/fact tables and monitor view.

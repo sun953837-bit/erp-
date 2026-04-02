@@ -12,6 +12,8 @@ class WebhookEvent extends Model
         'platform_code',
         'event_key',
         'signature',
+        'request_timestamp',
+        'received_at',
         'status',
         'attempts',
         'payload_json',
@@ -24,6 +26,8 @@ class WebhookEvent extends Model
         return [
             'attempts' => 'integer',
             'payload_json' => 'array',
+            'request_timestamp' => 'datetime',
+            'received_at' => 'datetime',
             'processed_at' => 'datetime',
         ];
     }

@@ -23,6 +23,14 @@ Converge legacy `service_orders` into canonical `orders` with `order_type=servic
 2. **Phase-B (dual write)**
 - Channel mapping + service order domain writes to both `service_orders` and `orders(order_type=service)`.
 - Compare row counts and key fields by daily reconciliation script.
+  - Implemented:
+    - dual-write service: `ServiceOrderDualWriteService`
+    - reconciliation API: `GET /api/orders/reconciliation/service`
+    - reconciliation CLI: `php artisan orders:service-reconcile --sample-limit=50`
+    - scheduled reconciliation cron:
+      - `SERVICE_ORDER_RECON_AUTO_ENABLED`
+      - `SERVICE_ORDER_RECON_CRON`
+      - `SERVICE_ORDER_RECON_SAMPLE_LIMIT`
 
 3. **Phase-C (cutover)**
 - Switch BI and business read path from `service_orders` to `orders` for service view.

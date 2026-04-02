@@ -3,15 +3,17 @@
 namespace App\Services\Bi;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 class BiEtlService
 {
     private const JOB_NAME = 'stage1_bi_etl';
     private const MAX_WINDOW_DAYS = 90;
     private const STAGE1_MODE = 'stage1';
+
+    private ?string $serviceReadSourceCache = null;
 
     public function refresh(array $options = []): array
     {
@@ -192,24 +194,59 @@ class BiEtlService
 
         $counts = [];
         foreach ($tables as $table) {
-            if (! Schema::hasTable($table)) {
+            if (! $this->targetSchema()->hasTable($table)) {
                 $counts[$table] = 0;
                 continue;
             }
-            $counts[$table] = DB::table($table)->count();
-        }
-
-        $lastRun = null;
-        if (Schema::hasTable('bi_etl_runs')) {
-            $lastRun = DB::table('bi_etl_runs')
-                ->where('job_name', self::JOB_NAME)
-                ->first();
+            $counts[$table] = $this->targetTable($table)->count();
         }
 
         return [
             'counts' => $counts,
-            'last_run' => $lastRun,
+            'last_run' => $this->fetchRunSnapshot(),
+            'service_read_source' => $this->serviceReadSourceMode(),
+            'source_connection' => $this->resolvedSourceConnectionName(),
+            'target_connection' => $this->resolvedTargetConnectionName(),
             'generated_at' => now()->toDateTimeString(),
+        ];
+    }
+
+    public function monitor(): array
+    {
+        $viewAvailable = false;
+        $viewRows = [];
+        try {
+            $viewRows = $this->targetTable('v_bi_etl_monitor')
+                ->orderByDesc('updated_at')
+                ->limit(10)
+                ->get()
+                ->map(static fn (object $row): array => (array) $row)
+                ->all();
+            $viewAvailable = true;
+        } catch (\Throwable) {
+            $viewAvailable = false;
+        }
+
+        $recentAlerts = [];
+        if ($this->sourceSchema()->hasTable('notifications')) {
+            $recentAlerts = $this->sourceTable('notifications')
+                ->where('biz_type', 'bi_etl')
+                ->orderByDesc('id')
+                ->limit(10)
+                ->get()
+                ->map(static fn (object $row): array => (array) $row)
+                ->all();
+        }
+
+        return [
+            'generated_at' => now()->toDateTimeString(),
+            'service_read_source' => $this->serviceReadSourceMode(),
+            'source_connection' => $this->resolvedSourceConnectionName(),
+            'target_connection' => $this->resolvedTargetConnectionName(),
+            'view_available' => $viewAvailable,
+            'view_rows' => $viewRows,
+            'last_run' => $this->fetchRunSnapshot(),
+            'recent_alerts' => $recentAlerts,
         ];
     }
 
@@ -260,15 +297,18 @@ class BiEtlService
             'dim_shop',
             'dim_platform',
         ] as $table) {
-            DB::table($table)->delete();
+            $this->targetTable($table)->delete();
         }
     }
 
     private function loadDimPlatform(bool $full): int
     {
         $codes = collect()
-            ->merge(DB::table('shops')->whereNotNull('platform_code')->pluck('platform_code')->all())
-            ->merge(DB::table('service_orders')->whereNotNull('platform_code')->pluck('platform_code')->all())
+            ->merge($this->sourceTable('shops')->whereNotNull('platform_code')->pluck('platform_code')->all())
+            ->merge($this->serviceSourceTable()
+                ->whereNotNull('platform_code')
+                ->pluck('platform_code')
+                ->all())
             ->map(static fn (mixed $value): string => trim((string) $value))
             ->filter(static fn (string $value): bool => $value !== '')
             ->unique()
@@ -288,7 +328,7 @@ class BiEtlService
         }
 
         if ($full) {
-            DB::table('dim_platform')->delete();
+            $this->targetTable('dim_platform')->delete();
             $this->bulkInsert('dim_platform', $rows);
         } else {
             $this->bulkUpsert(
@@ -304,7 +344,7 @@ class BiEtlService
 
     private function loadDimShop(bool $full): int
     {
-        $shops = DB::table('shops')
+        $shops = $this->sourceTable('shops')
             ->select([
                 'id',
                 'shop_code',
@@ -335,7 +375,7 @@ class BiEtlService
         ])->all();
 
         if ($full) {
-            DB::table('dim_shop')->delete();
+            $this->targetTable('dim_shop')->delete();
             $this->bulkInsert('dim_shop', $rows);
         } else {
             $this->bulkUpsert(
@@ -351,11 +391,11 @@ class BiEtlService
 
     private function loadDimCustomer(bool $full): int
     {
-        $names = DB::table('service_orders')
-            ->whereNotNull('customer_name')
-            ->whereRaw('TRIM(customer_name) <> ""')
+        $names = $this->serviceSourceTable()
+            ->whereNotNull($this->serviceSourceCustomerNameColumn())
+            ->whereRaw('TRIM('.$this->serviceSourceCustomerNameColumn().') <> ""')
             ->distinct()
-            ->pluck('customer_name')
+            ->pluck($this->serviceSourceCustomerNameColumn())
             ->map(static fn (mixed $value): string => trim((string) $value))
             ->filter(static fn (string $value): bool => $value !== '')
             ->unique()
@@ -373,7 +413,7 @@ class BiEtlService
         ])->all();
 
         if ($full) {
-            DB::table('dim_customer')->delete();
+            $this->targetTable('dim_customer')->delete();
             $this->bulkInsert('dim_customer', $rows);
         } else {
             $this->bulkUpsert(
@@ -389,10 +429,10 @@ class BiEtlService
 
     private function loadDimService(bool $full): int
     {
-        $services = DB::table('service_orders')
-            ->whereRaw('TRIM(service_name) <> ""')
+        $services = $this->serviceSourceTable()
+            ->whereRaw('TRIM('.$this->serviceSourceServiceNameColumn().') <> ""')
             ->distinct()
-            ->pluck('service_name')
+            ->pluck($this->serviceSourceServiceNameColumn())
             ->map(static fn (mixed $value): string => trim((string) $value))
             ->filter(static fn (string $value): bool => $value !== '')
             ->unique()
@@ -410,7 +450,7 @@ class BiEtlService
         ])->all();
 
         if ($full) {
-            DB::table('dim_service')->delete();
+            $this->targetTable('dim_service')->delete();
             $this->bulkInsert('dim_service', $rows);
         } else {
             $this->bulkUpsert(
@@ -428,20 +468,20 @@ class BiEtlService
     {
         if ($full) {
             $dateCandidates = [
-                DB::table('service_orders')->min('created_at'),
-                DB::table('service_orders')->min('confirmed_at'),
-                DB::table('service_orders')->min('completed_at'),
-                DB::table('refund_records')->min('refunded_at'),
-                DB::table('reconciliation_records')->min('created_at'),
-                DB::table('projects')->min('created_at'),
-                DB::table('tickets')->min('created_at'),
-                DB::table('service_orders')->max('created_at'),
-                DB::table('service_orders')->max('confirmed_at'),
-                DB::table('service_orders')->max('completed_at'),
-                DB::table('refund_records')->max('refunded_at'),
-                DB::table('reconciliation_records')->max('created_at'),
-                DB::table('projects')->max('created_at'),
-                DB::table('tickets')->max('created_at'),
+                $this->serviceSourceTable()->min('created_at'),
+                $this->serviceSourceTable()->min('confirmed_at'),
+                $this->serviceSourceTable()->min('completed_at'),
+                $this->sourceTable('refund_records')->min('refunded_at'),
+                $this->sourceTable('reconciliation_records')->min('created_at'),
+                $this->sourceTable('projects')->min('created_at'),
+                $this->sourceTable('tickets')->min('created_at'),
+                $this->serviceSourceTable()->max('created_at'),
+                $this->serviceSourceTable()->max('confirmed_at'),
+                $this->serviceSourceTable()->max('completed_at'),
+                $this->sourceTable('refund_records')->max('refunded_at'),
+                $this->sourceTable('reconciliation_records')->max('created_at'),
+                $this->sourceTable('projects')->max('created_at'),
+                $this->sourceTable('tickets')->max('created_at'),
             ];
 
             $start = null;
@@ -491,7 +531,7 @@ class BiEtlService
         }
 
         if ($full) {
-            DB::table('dim_date')->delete();
+            $this->targetTable('dim_date')->delete();
             $this->bulkInsert('dim_date', $rows);
         } else {
             $this->bulkUpsert(
@@ -507,67 +547,138 @@ class BiEtlService
 
     private function loadFactServiceOrders(?CarbonImmutable $since): int
     {
+        $useCanonical = $this->useCanonicalServiceSource();
         $changedOrderIds = null;
         if ($since !== null) {
-            $changedOrderIds = collect()
-                ->merge(
-                    DB::table('service_orders')
-                        ->where(function (Builder $query) use ($since): void {
-                            $query->where('created_at', '>=', $since)
-                                ->orWhere('updated_at', '>=', $since)
-                                ->orWhere('confirmed_at', '>=', $since)
-                                ->orWhere('completed_at', '>=', $since);
-                        })
-                        ->pluck('id')
-                        ->all()
-                )
-                ->merge(
-                    DB::table('receivable_records')
-                        ->where(function (Builder $query) use ($since): void {
-                            $query->where('created_at', '>=', $since)
-                                ->orWhere('updated_at', '>=', $since);
-                        })
-                        ->pluck('service_order_id')
-                        ->all()
-                )
-                ->filter(static fn (mixed $value): bool => $value !== null)
-                ->map(static fn (mixed $value): int => (int) $value)
-                ->unique()
-                ->values()
-                ->all();
+            if ($useCanonical) {
+                $changedOrderIds = collect()
+                    ->merge(
+                        $this->sourceTable('orders')
+                            ->where('order_type', 'service')
+                            ->where(function (Builder $query) use ($since): void {
+                                $query->where('created_at', '>=', $since)
+                                    ->orWhere('updated_at', '>=', $since)
+                                    ->orWhere('confirmed_at', '>=', $since)
+                                    ->orWhere('completed_at', '>=', $since);
+                            })
+                            ->pluck('id')
+                            ->all()
+                    )
+                    ->merge(
+                        $this->sourceTable('orders as o')
+                            ->join('receivable_records as rr', 'rr.service_order_id', '=', 'o.legacy_service_order_id')
+                            ->where('o.order_type', 'service')
+                            ->where(function (Builder $query) use ($since): void {
+                                $query->where('rr.created_at', '>=', $since)
+                                    ->orWhere('rr.updated_at', '>=', $since);
+                            })
+                            ->pluck('o.id')
+                            ->all()
+                    )
+                    ->filter(static fn (mixed $value): bool => $value !== null)
+                    ->map(static fn (mixed $value): int => (int) $value)
+                    ->unique()
+                    ->values()
+                    ->all();
+            } else {
+                $changedOrderIds = collect()
+                    ->merge(
+                        $this->sourceTable('service_orders')
+                            ->where(function (Builder $query) use ($since): void {
+                                $query->where('created_at', '>=', $since)
+                                    ->orWhere('updated_at', '>=', $since)
+                                    ->orWhere('confirmed_at', '>=', $since)
+                                    ->orWhere('completed_at', '>=', $since);
+                            })
+                            ->pluck('id')
+                            ->all()
+                    )
+                    ->merge(
+                        $this->sourceTable('receivable_records')
+                            ->where(function (Builder $query) use ($since): void {
+                                $query->where('created_at', '>=', $since)
+                                    ->orWhere('updated_at', '>=', $since);
+                            })
+                            ->pluck('service_order_id')
+                            ->all()
+                    )
+                    ->filter(static fn (mixed $value): bool => $value !== null)
+                    ->map(static fn (mixed $value): int => (int) $value)
+                    ->unique()
+                    ->values()
+                    ->all();
+            }
 
             if (count($changedOrderIds) === 0) {
                 return 0;
             }
         }
 
-        $receivedByOrder = DB::table('receivable_records')
-            ->select('service_order_id', DB::raw('SUM(received_amount) AS received_amount'))
-            ->when($changedOrderIds !== null, function ($query) use ($changedOrderIds) {
-                $query->whereIn('service_order_id', $changedOrderIds);
-            })
-            ->groupBy('service_order_id')
-            ->get()
-            ->pluck('received_amount', 'service_order_id');
+        if ($useCanonical) {
+            $receivedByOrder = $this->sourceTable('orders as o')
+                ->leftJoin('receivable_records as rr', 'rr.service_order_id', '=', 'o.legacy_service_order_id')
+                ->where('o.order_type', 'service')
+                ->when($changedOrderIds !== null, function ($query) use ($changedOrderIds): void {
+                    $query->whereIn('o.id', $changedOrderIds);
+                })
+                ->groupBy('o.id')
+                ->get([
+                    'o.id as source_order_id',
+                    DB::raw('SUM(COALESCE(rr.received_amount, 0)) AS received_amount'),
+                ])
+                ->pluck('received_amount', 'source_order_id');
 
-        $ordersQuery = DB::table('service_orders')
-            ->select([
-                'id',
-                'order_no',
-                'platform_code',
-                'shop_id',
-                'customer_name',
-                'service_name',
-                'status',
-                'currency',
-                'amount',
-                'created_at',
-                'confirmed_at',
-                'completed_at',
-            ])
-            ->orderBy('id');
+            $ordersQuery = $this->sourceTable('orders as o')
+                ->where('o.order_type', 'service')
+                ->select([
+                    'o.id as source_order_id',
+                    'o.order_no',
+                    'o.platform_code',
+                    'o.shop_id',
+                    'o.customer_name',
+                    'o.subject as service_name',
+                    'o.status',
+                    'o.currency',
+                    'o.amount',
+                    'o.created_at',
+                    'o.confirmed_at',
+                    'o.completed_at',
+                ])
+                ->orderBy('o.id');
+        } else {
+            $receivedByOrder = $this->sourceTable('receivable_records')
+                ->select('service_order_id', DB::raw('SUM(received_amount) AS received_amount'))
+                ->when($changedOrderIds !== null, function ($query) use ($changedOrderIds): void {
+                    $query->whereIn('service_order_id', $changedOrderIds);
+                })
+                ->groupBy('service_order_id')
+                ->get()
+                ->pluck('received_amount', 'service_order_id');
+
+            $ordersQuery = $this->sourceTable('service_orders')
+                ->select([
+                    'id as source_order_id',
+                    'order_no',
+                    'platform_code',
+                    'shop_id',
+                    'customer_name',
+                    'service_name',
+                    'status',
+                    'currency',
+                    'amount',
+                    'created_at',
+                    'confirmed_at',
+                    'completed_at',
+                ])
+                ->orderBy('id');
+        }
+
         if ($changedOrderIds !== null) {
-            $ordersQuery->whereIn('id', $changedOrderIds);
+            if ($useCanonical) {
+                $ordersQuery->whereIn('o.id', $changedOrderIds);
+            } else {
+                $ordersQuery->whereIn('id', $changedOrderIds);
+            }
         }
         $orders = $ordersQuery->get();
 
@@ -582,10 +693,11 @@ class BiEtlService
         $now = now();
         $rows = [];
         foreach ($orders as $order) {
+            $sourceOrderId = (int) $order->source_order_id;
             $amount = round((float) $order->amount, 2);
-            $received = round((float) ($receivedByOrder->get($order->id) ?? 0.0), 2);
+            $received = round((float) ($receivedByOrder->get($sourceOrderId) ?? 0.0), 2);
             $rows[] = [
-                'service_order_id' => (int) $order->id,
+                'service_order_id' => $sourceOrderId,
                 'order_no' => (string) $order->order_no,
                 'platform_code' => $this->nullableString($order->platform_code),
                 'shop_id' => $order->shop_id !== null ? (int) $order->shop_id : null,
@@ -610,12 +722,13 @@ class BiEtlService
 
     private function loadFactAfterSales(?CarbonImmutable $since): int
     {
+        $useCanonical = $this->useCanonicalServiceSource();
         $now = now();
         $rows = [];
 
         $changedRefundIds = null;
         if ($since !== null) {
-            $changedRefundIds = DB::table('refund_records')
+            $changedRefundIds = $this->sourceTable('refund_records')
                 ->where(function (Builder $query) use ($since): void {
                     $query->where('created_at', '>=', $since)
                         ->orWhere('updated_at', '>=', $since)
@@ -632,21 +745,43 @@ class BiEtlService
             }
         }
 
-        $refundsQuery = DB::table('refund_records as rr')
-            ->leftJoin('service_orders as so', 'so.id', '=', 'rr.service_order_id')
-            ->select([
-                'rr.id as refund_record_id',
-                'rr.service_order_id',
-                'rr.amount',
-                'rr.currency',
-                'rr.status',
-                'rr.refunded_at',
-                'so.platform_code',
-                'so.shop_id',
-                'so.customer_name',
-                'so.service_name',
-            ])
-            ->orderBy('rr.id');
+        if ($useCanonical) {
+            $refundsQuery = $this->sourceTable('refund_records as rr')
+                ->leftJoin('orders as so', function ($join): void {
+                    $join->on('so.legacy_service_order_id', '=', 'rr.service_order_id')
+                        ->where('so.order_type', '=', 'service');
+                })
+                ->select([
+                    'rr.id as refund_record_id',
+                    DB::raw('COALESCE(so.id, rr.service_order_id) AS source_service_order_id'),
+                    'rr.amount',
+                    'rr.currency',
+                    'rr.status',
+                    'rr.refunded_at',
+                    'so.platform_code',
+                    'so.shop_id',
+                    'so.customer_name',
+                    'so.subject as service_name',
+                ])
+                ->orderBy('rr.id');
+        } else {
+            $refundsQuery = $this->sourceTable('refund_records as rr')
+                ->leftJoin('service_orders as so', 'so.id', '=', 'rr.service_order_id')
+                ->select([
+                    'rr.id as refund_record_id',
+                    'rr.service_order_id as source_service_order_id',
+                    'rr.amount',
+                    'rr.currency',
+                    'rr.status',
+                    'rr.refunded_at',
+                    'so.platform_code',
+                    'so.shop_id',
+                    'so.customer_name',
+                    'so.service_name',
+                ])
+                ->orderBy('rr.id');
+        }
+
         if ($changedRefundIds !== null) {
             if (count($changedRefundIds) === 0) {
                 $refunds = collect();
@@ -663,7 +798,7 @@ class BiEtlService
                 'refund_record_id' => (int) $refund->refund_record_id,
                 'source_type' => 'refund_record',
                 'source_id' => (int) $refund->refund_record_id,
-                'service_order_id' => (int) $refund->service_order_id,
+                'service_order_id' => (int) $refund->source_service_order_id,
                 'platform_code' => $this->nullableString($refund->platform_code),
                 'shop_id' => $refund->shop_id !== null ? (int) $refund->shop_id : null,
                 'customer_name' => $this->nullableString($refund->customer_name),
@@ -679,39 +814,75 @@ class BiEtlService
 
         $changedOrderIds = null;
         if ($since !== null) {
-            $changedOrderIds = DB::table('service_orders')
-                ->where(function (Builder $query) use ($since): void {
-                    $query->where('created_at', '>=', $since)
-                        ->orWhere('updated_at', '>=', $since);
-                })
-                ->pluck('id')
-                ->map(static fn (mixed $value): int => (int) $value)
-                ->unique()
-                ->values()
-                ->all();
+            if ($useCanonical) {
+                $changedOrderIds = $this->sourceTable('orders')
+                    ->where('order_type', 'service')
+                    ->where(function (Builder $query) use ($since): void {
+                        $query->where('created_at', '>=', $since)
+                            ->orWhere('updated_at', '>=', $since);
+                    })
+                    ->pluck('id')
+                    ->map(static fn (mixed $value): int => (int) $value)
+                    ->unique()
+                    ->values()
+                    ->all();
+            } else {
+                $changedOrderIds = $this->sourceTable('service_orders')
+                    ->where(function (Builder $query) use ($since): void {
+                        $query->where('created_at', '>=', $since)
+                            ->orWhere('updated_at', '>=', $since);
+                    })
+                    ->pluck('id')
+                    ->map(static fn (mixed $value): int => (int) $value)
+                    ->unique()
+                    ->values()
+                    ->all();
+            }
 
             if (count($changedOrderIds) > 0) {
                 $this->deleteBySource('fact_after_sales', 'service_order_status', $changedOrderIds);
             }
         }
 
-        $afterSaleOrdersQuery = DB::table('service_orders as so')
-            ->where('so.status', 'after_sale')
-            ->whereNotExists(function (Builder $query): void {
-                $query->select(DB::raw('1'))
-                    ->from('refund_records as rr')
-                    ->whereColumn('rr.service_order_id', 'so.id');
-            })
-            ->select([
-                'so.id',
-                'so.platform_code',
-                'so.shop_id',
-                'so.customer_name',
-                'so.service_name',
-                'so.currency',
-                'so.updated_at',
-            ])
-            ->orderBy('so.id');
+        if ($useCanonical) {
+            $afterSaleOrdersQuery = $this->sourceTable('orders as so')
+                ->where('so.order_type', 'service')
+                ->where('so.status', 'after_sale')
+                ->whereNotExists(function (Builder $query): void {
+                    $query->select(DB::raw('1'))
+                        ->from('refund_records as rr')
+                        ->whereRaw('rr.service_order_id = COALESCE(so.legacy_service_order_id, so.id)');
+                })
+                ->select([
+                    'so.id as source_service_order_id',
+                    'so.platform_code',
+                    'so.shop_id',
+                    'so.customer_name',
+                    'so.subject as service_name',
+                    'so.currency',
+                    'so.updated_at',
+                ])
+                ->orderBy('so.id');
+        } else {
+            $afterSaleOrdersQuery = $this->sourceTable('service_orders as so')
+                ->where('so.status', 'after_sale')
+                ->whereNotExists(function (Builder $query): void {
+                    $query->select(DB::raw('1'))
+                        ->from('refund_records as rr')
+                        ->whereColumn('rr.service_order_id', 'so.id');
+                })
+                ->select([
+                    'so.id as source_service_order_id',
+                    'so.platform_code',
+                    'so.shop_id',
+                    'so.customer_name',
+                    'so.service_name',
+                    'so.currency',
+                    'so.updated_at',
+                ])
+                ->orderBy('so.id');
+        }
+
         if ($changedOrderIds !== null) {
             if (count($changedOrderIds) === 0) {
                 $afterSaleOrders = collect();
@@ -727,8 +898,8 @@ class BiEtlService
             $rows[] = [
                 'refund_record_id' => null,
                 'source_type' => 'service_order_status',
-                'source_id' => (int) $order->id,
-                'service_order_id' => (int) $order->id,
+                'source_id' => (int) $order->source_service_order_id,
+                'service_order_id' => (int) $order->source_service_order_id,
                 'platform_code' => $this->nullableString($order->platform_code),
                 'shop_id' => $order->shop_id !== null ? (int) $order->shop_id : null,
                 'customer_name' => $this->nullableString($order->customer_name),
@@ -748,9 +919,10 @@ class BiEtlService
 
     private function loadFactSettlements(?CarbonImmutable $since): int
     {
+        $useCanonical = $this->useCanonicalServiceSource();
         $changedSettlementIds = null;
         if ($since !== null) {
-            $changedSettlementIds = DB::table('reconciliation_records')
+            $changedSettlementIds = $this->sourceTable('reconciliation_records')
                 ->where(function (Builder $query) use ($since): void {
                     $query->where('created_at', '>=', $since)
                         ->orWhere('updated_at', '>=', $since);
@@ -766,22 +938,45 @@ class BiEtlService
             }
         }
 
-        $settlementsQuery = DB::table('reconciliation_records as rc')
-            ->leftJoin('service_orders as so', 'so.id', '=', 'rc.service_order_id')
-            ->select([
-                'rc.id as reconciliation_record_id',
-                'rc.service_order_id',
-                'rc.refund_record_id',
-                'rc.delta_amount',
-                'rc.currency',
-                'rc.status',
-                'rc.created_at',
-                'so.platform_code',
-                'so.shop_id',
-                'so.customer_name',
-                'so.service_name',
-            ])
-            ->orderBy('rc.id');
+        if ($useCanonical) {
+            $settlementsQuery = $this->sourceTable('reconciliation_records as rc')
+                ->leftJoin('orders as so', function ($join): void {
+                    $join->on('so.legacy_service_order_id', '=', 'rc.service_order_id')
+                        ->where('so.order_type', '=', 'service');
+                })
+                ->select([
+                    'rc.id as reconciliation_record_id',
+                    DB::raw('COALESCE(so.id, rc.service_order_id) AS source_service_order_id'),
+                    'rc.refund_record_id',
+                    'rc.delta_amount',
+                    'rc.currency',
+                    'rc.status',
+                    'rc.created_at',
+                    'so.platform_code',
+                    'so.shop_id',
+                    'so.customer_name',
+                    'so.subject as service_name',
+                ])
+                ->orderBy('rc.id');
+        } else {
+            $settlementsQuery = $this->sourceTable('reconciliation_records as rc')
+                ->leftJoin('service_orders as so', 'so.id', '=', 'rc.service_order_id')
+                ->select([
+                    'rc.id as reconciliation_record_id',
+                    'rc.service_order_id as source_service_order_id',
+                    'rc.refund_record_id',
+                    'rc.delta_amount',
+                    'rc.currency',
+                    'rc.status',
+                    'rc.created_at',
+                    'so.platform_code',
+                    'so.shop_id',
+                    'so.customer_name',
+                    'so.service_name',
+                ])
+                ->orderBy('rc.id');
+        }
+
         if ($changedSettlementIds !== null) {
             $settlementsQuery->whereIn('rc.id', $changedSettlementIds);
         }
@@ -799,7 +994,7 @@ class BiEtlService
         $rows = $settlements->map(function (object $item) use ($now): array {
             return [
                 'reconciliation_record_id' => (int) $item->reconciliation_record_id,
-                'service_order_id' => (int) $item->service_order_id,
+                'service_order_id' => (int) $item->source_service_order_id,
                 'platform_code' => $this->nullableString($item->platform_code),
                 'shop_id' => $item->shop_id !== null ? (int) $item->shop_id : null,
                 'customer_name' => $this->nullableString($item->customer_name),
@@ -820,12 +1015,13 @@ class BiEtlService
 
     private function loadFactProjectDelivery(?CarbonImmutable $since): int
     {
+        $useCanonical = $this->useCanonicalServiceSource();
         $rows = [];
         $now = now();
 
         $changedProjectIds = null;
         if ($since !== null) {
-            $changedProjectIds = DB::table('projects')
+            $changedProjectIds = $this->sourceTable('projects')
                 ->where(function (Builder $query) use ($since): void {
                     $query->where('created_at', '>=', $since)
                         ->orWhere('updated_at', '>=', $since);
@@ -837,21 +1033,43 @@ class BiEtlService
                 ->all();
         }
 
-        $projectsQuery = DB::table('projects as p')
-            ->leftJoin('service_orders as so', 'so.id', '=', 'p.service_order_id')
-            ->whereNotNull('p.service_order_id')
-            ->select([
-                'p.id as delivery_id',
-                'p.service_order_id',
-                'p.status as delivery_status',
-                'p.created_at as delivery_created_at',
-                'p.updated_at as delivery_updated_at',
-                'so.platform_code',
-                'so.shop_id',
-                'so.customer_name',
-                'so.service_name',
-            ])
-            ->orderBy('p.id');
+        if ($useCanonical) {
+            $projectsQuery = $this->sourceTable('projects as p')
+                ->leftJoin('orders as so', function ($join): void {
+                    $join->on('so.legacy_service_order_id', '=', 'p.service_order_id')
+                        ->where('so.order_type', '=', 'service');
+                })
+                ->whereNotNull('p.service_order_id')
+                ->select([
+                    'p.id as delivery_id',
+                    DB::raw('COALESCE(so.id, p.service_order_id) AS source_service_order_id'),
+                    'p.status as delivery_status',
+                    'p.created_at as delivery_created_at',
+                    'p.updated_at as delivery_updated_at',
+                    'so.platform_code',
+                    'so.shop_id',
+                    'so.customer_name',
+                    'so.subject as service_name',
+                ])
+                ->orderBy('p.id');
+        } else {
+            $projectsQuery = $this->sourceTable('projects as p')
+                ->leftJoin('service_orders as so', 'so.id', '=', 'p.service_order_id')
+                ->whereNotNull('p.service_order_id')
+                ->select([
+                    'p.id as delivery_id',
+                    'p.service_order_id as source_service_order_id',
+                    'p.status as delivery_status',
+                    'p.created_at as delivery_created_at',
+                    'p.updated_at as delivery_updated_at',
+                    'so.platform_code',
+                    'so.shop_id',
+                    'so.customer_name',
+                    'so.service_name',
+                ])
+                ->orderBy('p.id');
+        }
+
         if ($changedProjectIds !== null) {
             if (count($changedProjectIds) === 0) {
                 $projects = collect();
@@ -868,7 +1086,7 @@ class BiEtlService
             $rows[] = [
                 'delivery_type' => 'project',
                 'delivery_id' => (int) $project->delivery_id,
-                'service_order_id' => (int) $project->service_order_id,
+                'service_order_id' => (int) $project->source_service_order_id,
                 'platform_code' => $this->nullableString($project->platform_code),
                 'shop_id' => $project->shop_id !== null ? (int) $project->shop_id : null,
                 'customer_name' => $this->nullableString($project->customer_name),
@@ -884,7 +1102,7 @@ class BiEtlService
 
         $changedTicketIds = null;
         if ($since !== null) {
-            $changedTicketIds = DB::table('tickets')
+            $changedTicketIds = $this->sourceTable('tickets')
                 ->where(function (Builder $query) use ($since): void {
                     $query->where('created_at', '>=', $since)
                         ->orWhere('updated_at', '>=', $since);
@@ -896,21 +1114,43 @@ class BiEtlService
                 ->all();
         }
 
-        $ticketsQuery = DB::table('tickets as t')
-            ->leftJoin('service_orders as so', 'so.id', '=', 't.service_order_id')
-            ->whereNotNull('t.service_order_id')
-            ->select([
-                't.id as delivery_id',
-                't.service_order_id',
-                't.status as delivery_status',
-                't.created_at as delivery_created_at',
-                't.updated_at as delivery_updated_at',
-                'so.platform_code',
-                'so.shop_id',
-                'so.customer_name',
-                'so.service_name',
-            ])
-            ->orderBy('t.id');
+        if ($useCanonical) {
+            $ticketsQuery = $this->sourceTable('tickets as t')
+                ->leftJoin('orders as so', function ($join): void {
+                    $join->on('so.legacy_service_order_id', '=', 't.service_order_id')
+                        ->where('so.order_type', '=', 'service');
+                })
+                ->whereNotNull('t.service_order_id')
+                ->select([
+                    't.id as delivery_id',
+                    DB::raw('COALESCE(so.id, t.service_order_id) AS source_service_order_id'),
+                    't.status as delivery_status',
+                    't.created_at as delivery_created_at',
+                    't.updated_at as delivery_updated_at',
+                    'so.platform_code',
+                    'so.shop_id',
+                    'so.customer_name',
+                    'so.subject as service_name',
+                ])
+                ->orderBy('t.id');
+        } else {
+            $ticketsQuery = $this->sourceTable('tickets as t')
+                ->leftJoin('service_orders as so', 'so.id', '=', 't.service_order_id')
+                ->whereNotNull('t.service_order_id')
+                ->select([
+                    't.id as delivery_id',
+                    't.service_order_id as source_service_order_id',
+                    't.status as delivery_status',
+                    't.created_at as delivery_created_at',
+                    't.updated_at as delivery_updated_at',
+                    'so.platform_code',
+                    'so.shop_id',
+                    'so.customer_name',
+                    'so.service_name',
+                ])
+                ->orderBy('t.id');
+        }
+
         if ($changedTicketIds !== null) {
             if (count($changedTicketIds) === 0) {
                 $tickets = collect();
@@ -927,7 +1167,7 @@ class BiEtlService
             $rows[] = [
                 'delivery_type' => 'ticket',
                 'delivery_id' => (int) $ticket->delivery_id,
-                'service_order_id' => (int) $ticket->service_order_id,
+                'service_order_id' => (int) $ticket->source_service_order_id,
                 'platform_code' => $this->nullableString($ticket->platform_code),
                 'shop_id' => $ticket->shop_id !== null ? (int) $ticket->shop_id : null,
                 'customer_name' => $this->nullableString($ticket->customer_name),
@@ -982,7 +1222,7 @@ class BiEtlService
             return;
         }
         foreach (array_chunk($rows, $chunkSize) as $chunk) {
-            DB::table($table)->insert($chunk);
+            $this->targetTable($table)->insert($chunk);
         }
     }
 
@@ -997,7 +1237,7 @@ class BiEtlService
             return;
         }
         foreach (array_chunk($rows, $chunkSize) as $chunk) {
-            DB::table($table)->upsert($chunk, $uniqueBy, $updateColumns);
+            $this->targetTable($table)->upsert($chunk, $uniqueBy, $updateColumns);
         }
     }
 
@@ -1007,7 +1247,7 @@ class BiEtlService
             return;
         }
         foreach (array_chunk($ids, $chunkSize) as $chunk) {
-            DB::table($table)->whereIn($column, $chunk)->delete();
+            $this->targetTable($table)->whereIn($column, $chunk)->delete();
         }
     }
 
@@ -1017,7 +1257,7 @@ class BiEtlService
             return;
         }
         foreach (array_chunk($ids, $chunkSize) as $chunk) {
-            DB::table('fact_project_delivery')
+            $this->targetTable('fact_project_delivery')
                 ->where('delivery_type', $deliveryType)
                 ->whereIn('delivery_id', $chunk)
                 ->delete();
@@ -1030,7 +1270,7 @@ class BiEtlService
             return;
         }
         foreach (array_chunk($ids, $chunkSize) as $chunk) {
-            DB::table($table)
+            $this->targetTable($table)
                 ->where('source_type', $sourceType)
                 ->whereIn('source_id', $chunk)
                 ->delete();
@@ -1083,11 +1323,11 @@ class BiEtlService
 
     private function fetchRunSnapshot(): array
     {
-        if (! Schema::hasTable('bi_etl_runs')) {
+        if (! $this->targetSchema()->hasTable('bi_etl_runs')) {
             return [];
         }
 
-        $row = DB::table('bi_etl_runs')
+        $row = $this->targetTable('bi_etl_runs')
             ->where('job_name', self::JOB_NAME)
             ->first();
         if ($row === null) {
@@ -1150,11 +1390,11 @@ class BiEtlService
         if (! (bool) config('bi.stage1.alert_enabled', true)) {
             return;
         }
-        if (! Schema::hasTable('notifications')) {
+        if (! $this->sourceSchema()->hasTable('notifications')) {
             return;
         }
 
-        $dedupeExists = DB::table('notifications')
+        $dedupeExists = $this->sourceTable('notifications')
             ->where('dedupe_key', $dedupeKey)
             ->where('created_at', '>=', now()->subHours(4))
             ->exists();
@@ -1162,7 +1402,7 @@ class BiEtlService
             return;
         }
 
-        DB::table('notifications')->insert([
+        $this->sourceTable('notifications')->insert([
             'event_type' => $eventType,
             'biz_type' => 'bi_etl',
             'biz_id' => self::JOB_NAME,
@@ -1176,8 +1416,8 @@ class BiEtlService
             'read_at' => null,
         ]);
 
-        if (Schema::hasTable('audit_logs')) {
-            DB::table('audit_logs')->insert([
+        if ($this->sourceSchema()->hasTable('audit_logs')) {
+            $this->sourceTable('audit_logs')->insert([
                 'user_id' => null,
                 'action' => 'bi_etl_alert_emitted',
                 'biz_type' => 'bi_etl',
@@ -1198,12 +1438,12 @@ class BiEtlService
 
     private function recordRun(array $payload): void
     {
-        if (! Schema::hasTable('bi_etl_runs')) {
+        if (! $this->targetSchema()->hasTable('bi_etl_runs')) {
             return;
         }
 
         $now = now();
-        DB::table('bi_etl_runs')->upsert(
+        $this->targetTable('bi_etl_runs')->upsert(
             [array_merge($payload, [
                 'job_name' => self::JOB_NAME,
                 'created_at' => $now,
@@ -1229,5 +1469,113 @@ class BiEtlService
                 'updated_at',
             ]
         );
+    }
+
+    private function sourceConnection(): ConnectionInterface
+    {
+        return DB::connection($this->resolvedSourceConnectionName());
+    }
+
+    private function targetConnection(): ConnectionInterface
+    {
+        return DB::connection($this->resolvedTargetConnectionName());
+    }
+
+    private function sourceTable(string $table): Builder
+    {
+        return $this->sourceConnection()->table($table);
+    }
+
+    private function targetTable(string $table): Builder
+    {
+        return $this->targetConnection()->table($table);
+    }
+
+    private function sourceSchema()
+    {
+        return $this->sourceConnection()->getSchemaBuilder();
+    }
+
+    private function targetSchema()
+    {
+        return $this->targetConnection()->getSchemaBuilder();
+    }
+
+    private function resolvedSourceConnectionName(): string
+    {
+        $configured = trim((string) config('bi.source_connection', ''));
+        if ($configured !== '') {
+            return $configured;
+        }
+
+        return (string) config('database.default', 'mysql');
+    }
+
+    private function resolvedTargetConnectionName(): string
+    {
+        $configured = trim((string) config('bi.target_connection', ''));
+        if ($configured !== '') {
+            return $configured;
+        }
+
+        return $this->resolvedSourceConnectionName();
+    }
+
+    private function useCanonicalServiceSource(): bool
+    {
+        return $this->serviceReadSourceMode() === 'canonical_orders';
+    }
+
+    private function serviceReadSourceMode(): string
+    {
+        if ($this->serviceReadSourceCache !== null) {
+            return $this->serviceReadSourceCache;
+        }
+
+        $preferCanonical = (bool) config('bi.stage1.read_service_from_canonical_orders', false);
+        $fallbackEnabled = (bool) config('bi.stage1.canonical_fallback_enabled', true);
+
+        if (! $preferCanonical) {
+            $this->serviceReadSourceCache = 'legacy_service_orders';
+            return $this->serviceReadSourceCache;
+        }
+
+        $ordersTableExists = $this->sourceSchema()->hasTable('orders');
+        if (! $ordersTableExists) {
+            $this->serviceReadSourceCache = 'legacy_service_orders';
+            return $this->serviceReadSourceCache;
+        }
+
+        if ($fallbackEnabled && $this->sourceSchema()->hasTable('service_orders')) {
+            $hasCanonicalRows = $this->sourceTable('orders')
+                ->where('order_type', 'service')
+                ->exists();
+            if (! $hasCanonicalRows) {
+                $this->serviceReadSourceCache = 'legacy_service_orders';
+                return $this->serviceReadSourceCache;
+            }
+        }
+
+        $this->serviceReadSourceCache = 'canonical_orders';
+        return $this->serviceReadSourceCache;
+    }
+
+    private function serviceSourceTable(): Builder
+    {
+        if ($this->useCanonicalServiceSource()) {
+            return $this->sourceTable('orders')->where('order_type', 'service');
+        }
+
+        return $this->sourceTable('service_orders');
+    }
+
+    private function serviceSourceCustomerNameColumn(): string
+    {
+        return $this->useCanonicalServiceSource() ? 'customer_name' : 'customer_name';
+    }
+
+    private function serviceSourceServiceNameColumn(): string
+    {
+        return $this->useCanonicalServiceSource() ? 'subject' : 'service_name';
     }
 }

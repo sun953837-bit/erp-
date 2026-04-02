@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from app.adapters.http_pull_kernel import HttpPullError, fetch_http_pull_records
+from app.adapters.http_pull_kernel import HttpPullError, clip_payload, fetch_http_pull_records
 from app.adapters.xianyu_mock import XianyuMockAdapter
 from app.core.config import settings
 
@@ -96,14 +96,8 @@ class XianyuAdapter(XianyuMockAdapter):
             )
         except HttpPullError as exc:
             message = f"xianyu {action} http source failed: {exc.message}"
-            return self.make_response(
-                success=False,
-                accepted=False,
-                final=True,
-                code=exc.code,
-                message=message[:500],
-                external_id=self._build_external_id(payload),
-                raw_payload={
+            raw_payload = clip_payload(
+                {
                     "provider": self.provider_name,
                     "action": action,
                     "source": "http",
@@ -113,9 +107,30 @@ class XianyuAdapter(XianyuMockAdapter):
                         "retry_after_seconds": exc.retry_after_seconds,
                     },
                 },
+                settings.provider_error_payload_max_bytes,
+                "provider_error_payload",
+            )
+            return self.make_response(
+                success=False,
+                accepted=False,
+                final=True,
+                code=exc.code,
+                message=message[:500],
+                external_id=self._build_external_id(payload),
+                raw_payload=raw_payload,
             )
         except Exception as exc:  # noqa: BLE001
             message = f"xianyu {action} http source failed: {exc}"
+            raw_payload = clip_payload(
+                {
+                    "provider": self.provider_name,
+                    "action": action,
+                    "source": "http",
+                    "error": str(exc)[:1000],
+                },
+                settings.provider_error_payload_max_bytes,
+                "provider_error_payload",
+            )
             return self.make_response(
                 success=False,
                 accepted=False,
@@ -123,12 +138,7 @@ class XianyuAdapter(XianyuMockAdapter):
                 code="PULL_HTTP_REQUEST_FAILED",
                 message=message[:500],
                 external_id=self._build_external_id(payload),
-                raw_payload={
-                    "provider": self.provider_name,
-                    "action": action,
-                    "source": "http",
-                    "error": str(exc)[:1000],
-                },
+                raw_payload=raw_payload,
             )
 
     def _normalize_order_record(self, record: dict[str, Any]) -> dict[str, Any] | None:

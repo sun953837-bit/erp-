@@ -466,3 +466,24 @@ def _parse_retry_after(headers: Any) -> float | None:
         return max(0.0, (retry_at - now).total_seconds())
     except (TypeError, ValueError):
         return None
+
+
+def clip_payload(value: Any, max_bytes: int, label: str) -> Any:
+    max_size = max(256, int(max_bytes))
+    try:
+        encoded = json.dumps(value, ensure_ascii=False, default=str).encode("utf-8")
+    except (TypeError, ValueError):
+        encoded = str(value).encode("utf-8", errors="ignore")
+
+    size = len(encoded)
+    if size <= max_size:
+        return value
+
+    preview = encoded[:512].decode("utf-8", errors="ignore")
+    return {
+        "truncated": True,
+        "label": label,
+        "original_size_bytes": size,
+        "max_bytes": max_size,
+        "preview": preview,
+    }

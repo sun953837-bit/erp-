@@ -2,6 +2,7 @@
 
 use App\Services\Bi\BiEtlService;
 use App\Services\ChannelHub\RawChannelMappingService;
+use App\Services\Order\ServiceOrderReconciliationService;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
@@ -58,3 +59,18 @@ Schedule::command('channel:map-raw --limit='.max(1, (int) env('RAW_MAPPING_LIMIT
     ->cron((string) env('RAW_MAPPING_CRON', '*/2 * * * *'))
     ->withoutOverlapping()
     ->when(static fn (): bool => filter_var((string) env('RAW_MAPPING_AUTO_ENABLED', 'true'), FILTER_VALIDATE_BOOL));
+
+Artisan::command('orders:service-reconcile {--sample-limit=50 : sample rows per mismatch category}', function (ServiceOrderReconciliationService $service) {
+    $sampleLimit = max(1, min(500, (int) $this->option('sample-limit')));
+    $result = $service->reconcile([
+        'sample_limit' => $sampleLimit,
+    ]);
+    $this->info('Service order reconciliation completed.');
+    $this->line(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    return 0;
+})->describe('Reconcile service_orders with canonical orders(order_type=service)');
+
+Schedule::command('orders:service-reconcile --sample-limit='.max(1, (int) env('SERVICE_ORDER_RECON_SAMPLE_LIMIT', 50)))
+    ->cron((string) env('SERVICE_ORDER_RECON_CRON', '35 2 * * *'))
+    ->withoutOverlapping()
+    ->when(static fn (): bool => filter_var((string) env('SERVICE_ORDER_RECON_AUTO_ENABLED', 'true'), FILTER_VALIDATE_BOOL));

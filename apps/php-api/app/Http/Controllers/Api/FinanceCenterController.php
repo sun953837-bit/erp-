@@ -8,6 +8,7 @@ use App\Models\ReceivableRecord;
 use App\Models\ReconciliationRecord;
 use App\Models\RefundRecord;
 use App\Models\ServiceOrder;
+use App\Services\Order\ServiceOrderDualWriteService;
 use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -54,7 +55,7 @@ class FinanceCenterController extends Controller
         return ApiResponse::success($query->paginate(20));
     }
 
-    public function createPayment(Request $request)
+    public function createPayment(Request $request, ServiceOrderDualWriteService $dualWrite)
     {
         $payload = $request->validate([
             'service_order_id' => ['required', 'integer', 'exists:service_orders,id'],
@@ -66,7 +67,7 @@ class FinanceCenterController extends Controller
             'note' => ['nullable', 'string'],
         ]);
 
-        $result = DB::transaction(function () use ($payload): array {
+        $result = DB::transaction(function () use ($payload, $dualWrite): array {
             /** @var ServiceOrder $order */
             $order = ServiceOrder::query()->findOrFail((int) $payload['service_order_id']);
             /** @var ReceivableRecord|null $receivable */
@@ -108,6 +109,10 @@ class FinanceCenterController extends Controller
                 'note' => 'payment recorded',
             ]);
 
+            if ($this->isDualWriteEnabled()) {
+                $dualWrite->syncCanonicalFromServiceOrder($order);
+            }
+
             return [
                 'payment' => $payment,
                 'receivable' => $receivable,
@@ -117,7 +122,7 @@ class FinanceCenterController extends Controller
         return ApiResponse::success($result, 'payment recorded');
     }
 
-    public function createRefund(Request $request)
+    public function createRefund(Request $request, ServiceOrderDualWriteService $dualWrite)
     {
         $payload = $request->validate([
             'service_order_id' => ['required', 'integer', 'exists:service_orders,id'],
@@ -129,7 +134,7 @@ class FinanceCenterController extends Controller
             'refunded_at' => ['nullable', 'date'],
         ]);
 
-        $result = DB::transaction(function () use ($payload): array {
+        $result = DB::transaction(function () use ($payload, $dualWrite): array {
             /** @var ServiceOrder $order */
             $order = ServiceOrder::query()->findOrFail((int) $payload['service_order_id']);
             /** @var ReceivableRecord|null $receivable */
@@ -173,6 +178,10 @@ class FinanceCenterController extends Controller
                 'note' => 'refund recorded',
             ]);
 
+            if ($this->isDualWriteEnabled()) {
+                $dualWrite->syncCanonicalFromServiceOrder($order);
+            }
+
             return [
                 'refund' => $refund,
                 'receivable' => $receivable,
@@ -197,5 +206,10 @@ class FinanceCenterController extends Controller
             return 'PAID';
         }
         return 'PARTIAL';
+    }
+
+    private function isDualWriteEnabled(): bool
+    {
+        return filter_var((string) env('SERVICE_ORDER_DUAL_WRITE_ENABLED', 'true'), FILTER_VALIDATE_BOOL);
     }
 }

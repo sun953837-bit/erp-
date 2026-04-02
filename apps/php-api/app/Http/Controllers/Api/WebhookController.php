@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\WebhookEvent;
 use App\Support\ApiResponse;
+use App\Support\SensitiveDataMasker;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -59,10 +61,35 @@ class WebhookController extends Controller
             return ApiResponse::error('VALIDATION_ERROR', 'payload must be valid json object', 400);
         }
 
+        $requestTimestamp = $this->resolveRequestTimestamp($request, $payload);
+        $requiresTimestamp = (bool) config('webhook.require_timestamp', true);
+        if ($requiresTimestamp && $requestTimestamp === null) {
+            return ApiResponse::error('UNAUTHORIZED', 'missing webhook timestamp', 401);
+        }
+        if ($requestTimestamp !== null && ! $this->isTimestampWithinWindow($requestTimestamp)) {
+            $this->writeAuditLog(
+                action: 'webhook_timestamp_rejected',
+                platformCode: $platformCode,
+                bizId: null,
+                detail: [
+                    'reason' => 'timestamp_out_of_window',
+                    'request_timestamp' => $requestTimestamp->toDateTimeString(),
+                    'allowed_drift_seconds' => (int) config('webhook.allowed_drift_seconds', 300),
+                ]
+            );
+            return ApiResponse::error('UNAUTHORIZED', 'webhook timestamp out of allowed window', 401);
+        }
+
+        $payloadForStorage = SensitiveDataMasker::clipPayload(
+            payload: $payload,
+            maxBytes: (int) config('webhook.max_payload_bytes', 131072),
+            label: 'webhook_payload'
+        );
+
         $eventKey = $this->resolveEventKey($request, $payload, $platformCode, $rawBody);
 
         try {
-            $result = DB::transaction(function () use ($platformCode, $eventKey, $signature, $payload) {
+            $result = DB::transaction(function () use ($platformCode, $eventKey, $signature, $payload, $payloadForStorage, $requestTimestamp) {
                 $event = WebhookEvent::query()
                     ->where('platform_code', $platformCode)
                     ->where('event_key', $eventKey)
@@ -84,7 +111,9 @@ class WebhookController extends Controller
                 }
 
                 $event->signature = $signature;
-                $event->payload_json = $payload;
+                $event->payload_json = $payloadForStorage;
+                $event->request_timestamp = $requestTimestamp;
+                $event->received_at = now();
                 $event->attempts = ((int) $event->attempts) + 1;
                 $event->status = 'RECEIVED';
                 $event->error_message = null;
@@ -114,7 +143,7 @@ class WebhookController extends Controller
                     ];
                 } catch (Throwable $e) {
                     $event->status = 'FAILED';
-                    $event->error_message = substr($e->getMessage(), 0, 1000);
+                    $event->error_message = $this->clipErrorMessage($e->getMessage());
                     $event->save();
 
                     $this->writeAuditLog(
@@ -234,7 +263,7 @@ class WebhookController extends Controller
             return ApiResponse::success($event, 'webhook event retried');
         } catch (Throwable $e) {
             $event->status = 'FAILED';
-            $event->error_message = substr($e->getMessage(), 0, 1000);
+            $event->error_message = $this->clipErrorMessage($e->getMessage());
             $event->save();
 
             $this->writeAuditLog(
@@ -295,8 +324,60 @@ class WebhookController extends Controller
         return hash('sha256', $platformCode.'|'.$rawBody);
     }
 
+    private function resolveRequestTimestamp(Request $request, array $payload): ?CarbonImmutable
+    {
+        $candidates = [
+            trim((string) $request->header('X-Timestamp', '')),
+            trim((string) $request->header('X-Signature-Timestamp', '')),
+            trim((string) ($payload['timestamp'] ?? '')),
+            trim((string) ($payload['event_timestamp'] ?? '')),
+        ];
+
+        foreach ($candidates as $value) {
+            if ($value === '') {
+                continue;
+            }
+
+            if (ctype_digit($value)) {
+                $unix = (int) $value;
+                if ($unix > 9999999999) {
+                    $unix = (int) floor($unix / 1000);
+                }
+                return CarbonImmutable::createFromTimestampUTC($unix);
+            }
+
+            try {
+                return CarbonImmutable::parse($value);
+            } catch (Throwable) {
+                continue;
+            }
+        }
+
+        return null;
+    }
+
+    private function isTimestampWithinWindow(CarbonImmutable $requestTimestamp): bool
+    {
+        $allowedDrift = max(10, (int) config('webhook.allowed_drift_seconds', 300));
+        $delta = abs($requestTimestamp->diffInSeconds(CarbonImmutable::now('UTC'), false));
+        return $delta <= $allowedDrift;
+    }
+
+    private function clipErrorMessage(string $message): string
+    {
+        $maxLength = max(128, (int) config('webhook.max_error_message_length', 1000));
+        return mb_substr($message, 0, $maxLength);
+    }
+
     private function writeAuditLog(string $action, string $platformCode, ?string $bizId, array $detail): void
     {
+        $maskedDetail = SensitiveDataMasker::maskArray($detail);
+        $safeDetail = SensitiveDataMasker::clipPayload(
+            payload: $maskedDetail,
+            maxBytes: (int) config('webhook.max_payload_bytes', 131072),
+            label: 'webhook_audit_detail'
+        );
+
         DB::table('audit_logs')->insert([
             'user_id' => null,
             'action' => $action,
@@ -307,7 +388,7 @@ class WebhookController extends Controller
             'user_agent' => substr((string) request()->userAgent(), 0, 255),
             'detail_json' => json_encode([
                 'platform_code' => $platformCode,
-                'detail' => $detail,
+                'detail' => $safeDetail,
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'created_at' => now(),
         ]);

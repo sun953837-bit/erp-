@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\SyncTask;
 use App\Services\SyncTask\SyncTaskRunDispatcher;
 use App\Support\ApiResponse;
+use App\Support\SensitiveDataMasker;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -207,6 +208,16 @@ class SyncTaskController extends Controller
         Carbon $manualRunAt
     ): void {
         try {
+            $detailPayload = [
+                'task_no' => $task->task_no,
+                'task_status' => $task->status,
+                'manual_run_at' => $manualRunAt->toDateTimeString(),
+                'dispatch_failure_mode' => $dispatchMode,
+                'dispatch' => $dispatchResult,
+            ];
+            $maskedDetail = SensitiveDataMasker::maskArray($detailPayload);
+            $safeDetail = SensitiveDataMasker::clipPayload($maskedDetail, 65536, 'sync_manual_run_audit');
+
             DB::table('audit_logs')->insert([
                 'user_id' => null,
                 'action' => (bool) ($dispatchResult['success'] ?? false)
@@ -217,13 +228,7 @@ class SyncTaskController extends Controller
                 'request_id' => null,
                 'ip' => request()->ip(),
                 'user_agent' => substr((string) request()->userAgent(), 0, 255),
-                'detail_json' => json_encode([
-                    'task_no' => $task->task_no,
-                    'task_status' => $task->status,
-                    'manual_run_at' => $manualRunAt->toDateTimeString(),
-                    'dispatch_failure_mode' => $dispatchMode,
-                    'dispatch' => $dispatchResult,
-                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'detail_json' => json_encode($safeDetail, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 'created_at' => now(),
             ]);
         } catch (\Throwable) {

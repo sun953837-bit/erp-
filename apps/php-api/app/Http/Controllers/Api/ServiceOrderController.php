@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Models\ReceivableRecord;
 use App\Models\ServiceOrder;
 use App\Models\Ticket;
+use App\Services\Order\ServiceOrderDualWriteService;
 use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -57,7 +58,7 @@ class ServiceOrderController extends Controller
         return ApiResponse::success($order);
     }
 
-    public function store(Request $request)
+    public function store(Request $request, ServiceOrderDualWriteService $dualWrite)
     {
         $freezeLegacyWrite = filter_var((string) env('FREEZE_LEGACY_SERVICE_ORDER_WRITE', 'true'), FILTER_VALIDATE_BOOL);
         if ($freezeLegacyWrite) {
@@ -82,26 +83,34 @@ class ServiceOrderController extends Controller
         ]);
 
         $orderNo = sprintf('SO%s%s', now()->format('YmdHis'), strtoupper(Str::random(4)));
-        $order = ServiceOrder::query()->create([
-            'order_no' => $orderNo,
-            'platform_code' => $payload['platform_code'] ?? null,
-            'shop_id' => $payload['shop_id'] ?? null,
-            'external_order_id' => $payload['external_order_id'] ?? null,
-            'service_name' => $payload['service_name'],
-            'customer_name' => $payload['customer_name'] ?? null,
-            'currency' => strtoupper((string) ($payload['currency'] ?? 'CNY')),
-            'amount' => $payload['amount'],
-            'status' => 'pending',
-            'delivery_mode' => $payload['delivery_mode'] ?? 'auto',
-            'meta_json' => $payload['meta_json'] ?? null,
-            'confirmed_at' => null,
-            'completed_at' => null,
-        ]);
+        $order = DB::transaction(function () use ($payload, $orderNo, $dualWrite): ServiceOrder {
+            $created = ServiceOrder::query()->create([
+                'order_no' => $orderNo,
+                'platform_code' => $payload['platform_code'] ?? null,
+                'shop_id' => $payload['shop_id'] ?? null,
+                'external_order_id' => $payload['external_order_id'] ?? null,
+                'service_name' => $payload['service_name'],
+                'customer_name' => $payload['customer_name'] ?? null,
+                'currency' => strtoupper((string) ($payload['currency'] ?? 'CNY')),
+                'amount' => $payload['amount'],
+                'status' => 'pending',
+                'delivery_mode' => $payload['delivery_mode'] ?? 'auto',
+                'meta_json' => $payload['meta_json'] ?? null,
+                'confirmed_at' => null,
+                'completed_at' => null,
+            ]);
+
+            if ($this->isDualWriteEnabled()) {
+                $dualWrite->syncCanonicalFromServiceOrder($created);
+            }
+
+            return $created;
+        });
 
         return ApiResponse::success($order, 'success', 'OK', 201);
     }
 
-    public function updateStatus(Request $request, int $id)
+    public function updateStatus(Request $request, int $id, ServiceOrderDualWriteService $dualWrite)
     {
         $payload = $request->validate([
             'status' => ['required', 'string', 'max:32'],
@@ -136,7 +145,7 @@ class ServiceOrderController extends Controller
             return ApiResponse::error('VALIDATION_ERROR', 'invalid delivery_mode', 422);
         }
 
-        DB::transaction(function () use ($order, $targetStatus, $deliveryMode): void {
+        DB::transaction(function () use ($order, $targetStatus, $deliveryMode, $dualWrite): void {
             if ($deliveryMode !== null) {
                 $order->delivery_mode = $deliveryMode;
             }
@@ -153,6 +162,10 @@ class ServiceOrderController extends Controller
             if ($targetStatus === 'confirmed') {
                 $this->ensureReceivable($order);
                 $this->ensureDeliveryObject($order, $deliveryMode);
+            }
+
+            if ($this->isDualWriteEnabled()) {
+                $dualWrite->syncCanonicalFromServiceOrder($order);
             }
         });
 
@@ -227,5 +240,10 @@ class ServiceOrderController extends Controller
             return false;
         }
         return in_array($to, $this->statusTransitions[$fromKey], true);
+    }
+
+    private function isDualWriteEnabled(): bool
+    {
+        return filter_var((string) env('SERVICE_ORDER_DUAL_WRITE_ENABLED', 'true'), FILTER_VALIDATE_BOOL);
     }
 }

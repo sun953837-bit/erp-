@@ -12,6 +12,13 @@ class WebhookReplayCompensationTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config()->set('webhook.require_timestamp', true);
+        config()->set('webhook.allowed_drift_seconds', 300);
+    }
+
     public function test_processed_event_replay_is_deduplicated(): void
     {
         $payload = [
@@ -70,8 +77,22 @@ class WebhookReplayCompensationTest extends TestCase
         $this->assertSame(2, (int) $event->attempts);
     }
 
-    private function postWebhook(string $platform, array $payload, string $eventId)
+    public function test_stale_timestamp_is_rejected(): void
     {
+        $payload = [
+            'event_id' => 'evt-stale-001',
+            'event_type' => 'order_update',
+        ];
+        $oldTs = now()->subHour()->timestamp;
+        $response = $this->postWebhook('xianyu', $payload, 'evt-stale-001', $oldTs);
+        $response->assertStatus(401);
+        $response->assertJsonPath('code', 'UNAUTHORIZED');
+    }
+
+    private function postWebhook(string $platform, array $payload, string $eventId, ?int $timestamp = null)
+    {
+        $requestTimestamp = $timestamp ?? now()->timestamp;
+        $payload['timestamp'] = $requestTimestamp;
         $rawBody = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $secret = (string) env('WEBHOOK_SHARED_SECRET', 'stage1-test-secret');
         $signature = hash_hmac('sha256', (string) $rawBody, $secret);
@@ -86,6 +107,7 @@ class WebhookReplayCompensationTest extends TestCase
                 'CONTENT_TYPE' => 'application/json',
                 'HTTP_X_SIGNATURE' => $signature,
                 'HTTP_X_EVENT_ID' => $eventId,
+                'HTTP_X_TIMESTAMP' => (string) $requestTimestamp,
             ],
             (string) $rawBody
         );

@@ -46,4 +46,9 @@ class Order extends Model
     {
         return $this->hasMany(GoodsOrderFulfillment::class, 'order_id');
     }
+
+    public function goodsAfterSales(): HasMany
+    {
+        return $this->hasMany(GoodsAfterSaleRecord::class, 'order_id');
+    }
 }

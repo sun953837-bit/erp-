@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     worker_max_pull_records_per_task: int = 200
     worker_max_payload_bytes: int = 1048576
     worker_max_row_payload_bytes: int = 262144
+    provider_error_payload_max_bytes: int = 4096
 
     xianyu_orders_source_mode: str = "mock"
     xianyu_orders_endpoint: str = ""

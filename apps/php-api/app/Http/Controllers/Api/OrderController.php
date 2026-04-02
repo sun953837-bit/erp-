@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\GoodsOrderFulfillment;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Services\Order\ServiceOrderDualWriteService;
 use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +14,11 @@ use Illuminate\Support\Str;
 
 class OrderController extends Controller
 {
+    public function __construct(
+        private readonly ServiceOrderDualWriteService $dualWrite
+    ) {
+    }
+
     private array $allowedOrderTypes = [
         'service',
         'goods',
@@ -53,7 +59,7 @@ class OrderController extends Controller
         $orderType = strtolower($request->string('order_type')->toString());
         $status = strtolower($request->string('status')->toString());
 
-        $query = Order::query()->with(['items', 'goodsFulfillments'])->orderByDesc('id');
+        $query = Order::query()->with(['items', 'goodsFulfillments', 'goodsAfterSales'])->orderByDesc('id');
         if ($orderType !== '') {
             $query->where('order_type', $orderType);
         }
@@ -75,7 +81,7 @@ class OrderController extends Controller
 
     public function show(int $id)
     {
-        $order = Order::query()->with(['items', 'goodsFulfillments'])->find($id);
+        $order = Order::query()->with(['items', 'goodsFulfillments', 'goodsAfterSales'])->find($id);
         if (! $order) {
             return ApiResponse::error('NOT_FOUND', 'order not found', 404);
         }
@@ -134,9 +140,13 @@ class OrderController extends Controller
             if ($order->order_type === 'goods' && in_array($targetStatus, ['confirmed', 'shipped'], true)) {
                 $this->ensureGoodsFulfillment($order);
             }
+
+            if ($order->order_type === 'service' && $this->isDualWriteEnabled()) {
+                $this->dualWrite->syncServiceFromCanonicalOrder($order);
+            }
         });
 
-        $order->load(['items', 'goodsFulfillments']);
+        $order->load(['items', 'goodsFulfillments', 'goodsAfterSales']);
         return ApiResponse::success($order);
     }
 
@@ -258,10 +268,14 @@ class OrderController extends Controller
                 $this->ensureGoodsFulfillment($order);
             }
 
+            if ($orderType === 'service' && $this->isDualWriteEnabled()) {
+                $this->dualWrite->syncServiceFromCanonicalOrder($order);
+            }
+
             return $order;
         });
 
-        $order->load(['items', 'goodsFulfillments']);
+        $order->load(['items', 'goodsFulfillments', 'goodsAfterSales']);
         return ApiResponse::success($order, 'success', 'OK', 201);
     }
 
@@ -293,5 +307,10 @@ class OrderController extends Controller
             return false;
         }
         return in_array($to, $this->statusTransitions[$fromKey], true);
+    }
+
+    private function isDualWriteEnabled(): bool
+    {
+        return filter_var((string) env('SERVICE_ORDER_DUAL_WRITE_ENABLED', 'true'), FILTER_VALIDATE_BOOL);
     }
 }

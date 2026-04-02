@@ -14,6 +14,11 @@ class BiEtlController extends Controller
         return ApiResponse::success($etlService->summary());
     }
 
+    public function monitor(BiEtlService $etlService)
+    {
+        return ApiResponse::success($etlService->monitor());
+    }
+
     public function refresh(Request $request, BiEtlService $etlService)
     {
         $payload = $request->validate([

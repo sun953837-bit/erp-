@@ -49,7 +49,7 @@ Canonical names above are governance targets for next-stage closure and should b
 - `orders`: `implemented` (canonical write path, `order_type=service|goods`)
 - `order_items`: `implemented`
 - `goods_order_fulfillments`: `implemented` (goods baseline, no inventory extension)
-- `service_orders`: `compatibility(read-write)` transitioning to `compatibility(read-only)` under freeze policy
+- `service_orders`: `compatibility(dual-write)` with legacy direct write frozen and reconciliation guard enabled
 - `refund_records`: `implemented`
 - `receivable_records`: `implemented`
 - `projects` / `tickets`: `implemented`

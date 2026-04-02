@@ -4,8 +4,11 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BiEtlController;
 use App\Http\Controllers\Api\ChannelAccountController;
 use App\Http\Controllers\Api\FinanceCenterController;
+use App\Http\Controllers\Api\GoodsAfterSaleController;
+use App\Http\Controllers\Api\GoodsFulfillmentController;
 use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\OrderReconciliationController;
 use App\Http\Controllers\Api\PlatformProductMappingController;
 use App\Http\Controllers\Api\ProductSkuController;
 use App\Http\Controllers\Api\ProductSpuController;
@@ -47,6 +50,13 @@ Route::get('/orders', [OrderController::class, 'index']);
 Route::post('/orders', [OrderController::class, 'store']);
 Route::get('/orders/goods', [OrderController::class, 'indexGoods']);
 Route::post('/orders/goods', [OrderController::class, 'storeGoods']);
+Route::get('/orders/goods/fulfillments', [GoodsFulfillmentController::class, 'index']);
+Route::patch('/orders/goods/fulfillments/{id}/status', [GoodsFulfillmentController::class, 'updateStatus']);
+Route::post('/orders/goods/fulfillments/{id}/writeback', [GoodsFulfillmentController::class, 'writebackPlaceholder']);
+Route::get('/orders/goods/after-sales', [GoodsAfterSaleController::class, 'index']);
+Route::post('/orders/goods/after-sales', [GoodsAfterSaleController::class, 'store']);
+Route::patch('/orders/goods/after-sales/{id}/status', [GoodsAfterSaleController::class, 'updateStatus']);
+Route::get('/orders/reconciliation/service', [OrderReconciliationController::class, 'service']);
 Route::get('/orders/{id}', [OrderController::class, 'show']);
 Route::patch('/orders/{id}/status', [OrderController::class, 'updateStatus']);
 
@@ -58,6 +68,7 @@ Route::post('/finance/refunds', [FinanceCenterController::class, 'createRefund']
 Route::get('/finance/reconciliations', [FinanceCenterController::class, 'reconciliations']);
 
 Route::get('/bi/etl/summary', [BiEtlController::class, 'summary']);
+Route::get('/bi/etl/monitor', [BiEtlController::class, 'monitor']);
 Route::post('/bi/etl/refresh', [BiEtlController::class, 'refresh']);
 Route::post('/bi/etl/recover', [BiEtlController::class, 'recover']);
 

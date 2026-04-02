@@ -8,6 +8,7 @@ use App\Services\SyncTask\SyncTaskRunDispatcher;
 use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class SyncTaskController extends Controller
@@ -148,19 +149,85 @@ class SyncTaskController extends Controller
             $task->status = 'RETRYING';
         }
 
-        $task->next_retry_at = Carbon::now();
+        $manualRunAt = Carbon::now();
+        $task->next_retry_at = $manualRunAt;
         $task->finished_at = null;
         $task->last_error_code = null;
         $task->last_error_message = null;
         $task->updated_by = 'manual-run-api';
-        $task->updated_at = Carbon::now();
+        $task->updated_at = $manualRunAt;
         $task->save();
 
         $dispatchResult = $dispatcher->triggerWorker();
+        $dispatchMode = $dispatcher->failureMode();
+        $this->writeManualRunAuditLog($task, $dispatchResult, $dispatchMode, $manualRunAt);
+
+        if (! (bool) ($dispatchResult['success'] ?? false)) {
+            $task->last_error_code = 'MANUAL_DISPATCH_FAILED';
+            $task->last_error_message = Str::limit($dispatcher->failureMessage($dispatchResult), 1000, '');
+            $task->updated_at = Carbon::now();
+
+            if ($dispatchMode === 'mark_manual_review') {
+                $task->status = 'MANUAL_REVIEW';
+                $task->next_retry_at = null;
+                $task->save();
+
+                return ApiResponse::error(
+                    'SYNC_WORKER_UNAVAILABLE',
+                    'manual run dispatch failed, task moved to MANUAL_REVIEW',
+                    503,
+                    [
+                        'task' => $task,
+                        'dispatch' => $dispatchResult,
+                        'dispatch_failure_mode' => $dispatchMode,
+                    ]
+                );
+            }
+
+            $task->save();
+
+            return ApiResponse::success([
+                'task' => $task,
+                'dispatch' => $dispatchResult,
+                'dispatch_failure_mode' => $dispatchMode,
+            ], 'task queued, but worker dispatch failed', 'PARTIAL_OK', 202);
+        }
 
         return ApiResponse::success([
             'task' => $task,
             'dispatch' => $dispatchResult,
+            'dispatch_failure_mode' => $dispatchMode,
         ], 'task queued for immediate execution');
+    }
+
+    private function writeManualRunAuditLog(
+        SyncTask $task,
+        array $dispatchResult,
+        string $dispatchMode,
+        Carbon $manualRunAt
+    ): void {
+        try {
+            DB::table('audit_logs')->insert([
+                'user_id' => null,
+                'action' => (bool) ($dispatchResult['success'] ?? false)
+                    ? 'sync_task_manual_run_dispatched'
+                    : 'sync_task_manual_run_dispatch_failed',
+                'biz_type' => 'sync_task',
+                'biz_id' => (string) $task->id,
+                'request_id' => null,
+                'ip' => request()->ip(),
+                'user_agent' => substr((string) request()->userAgent(), 0, 255),
+                'detail_json' => json_encode([
+                    'task_no' => $task->task_no,
+                    'task_status' => $task->status,
+                    'manual_run_at' => $manualRunAt->toDateTimeString(),
+                    'dispatch_failure_mode' => $dispatchMode,
+                    'dispatch' => $dispatchResult,
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'created_at' => now(),
+            ]);
+        } catch (\Throwable) {
+            // keep manual-run api non-blocking even if audit persistence fails
+        }
     }
 }

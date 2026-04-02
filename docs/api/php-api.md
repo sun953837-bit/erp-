@@ -57,7 +57,11 @@ Contract baseline for P0.5 is maintained in `docs/api/overview-phase-a.md`.
 `POST /sync-tasks/{id}/run` behavior:
 - marks task for immediate execution (`next_retry_at=now`)
 - attempts to trigger python-sync worker once via internal URL (`PYTHON_SYNC_INTERNAL_URL`)
-- returns both task snapshot and dispatch result
+- always returns both task snapshot and dispatch result
+- dispatch failure handling is controlled by `SYNC_MANUAL_RUN_DISPATCH_FAILURE_MODE`:
+  - `mark_manual_review` (default): task is moved to `MANUAL_REVIEW`, returns `503 SYNC_WORKER_UNAVAILABLE`
+  - `keep_queued`: task remains queued with `last_error_*` updated, returns `202 PARTIAL_OK`
+- each manual run attempt writes audit log row (`sync_task_manual_run_dispatched` / `sync_task_manual_run_dispatch_failed`)
 
 `task_type` currently supported:
 

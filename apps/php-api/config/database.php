@@ -27,10 +27,16 @@ return [
             'strict' => true,
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? (static function (): array {
+                $sslCa = trim((string) env('MYSQL_ATTR_SSL_CA', ''));
+                if ($sslCa === '') {
+                    return [];
+                }
+
                 $sslOption = null;
-                if (defined('Pdo\\Mysql::ATTR_SSL_CA')) {
-                    $sslOption = constant('Pdo\\Mysql::ATTR_SSL_CA');
-                } elseif (defined('PDO::MYSQL_ATTR_SSL_CA')) {
+                $pdoMysqlClass = 'Pdo\\Mysql';
+                if (class_exists($pdoMysqlClass) && defined($pdoMysqlClass.'::ATTR_SSL_CA')) {
+                    $sslOption = constant($pdoMysqlClass.'::ATTR_SSL_CA');
+                } elseif (PHP_VERSION_ID < 80400 && defined('PDO::MYSQL_ATTR_SSL_CA')) {
                     $sslOption = constant('PDO::MYSQL_ATTR_SSL_CA');
                 }
 
@@ -38,9 +44,9 @@ return [
                     return [];
                 }
 
-                return array_filter([
-                    $sslOption => env('MYSQL_ATTR_SSL_CA'),
-                ]);
+                return [
+                    $sslOption => $sslCa,
+                ];
             })() : [],
         ],
     ],

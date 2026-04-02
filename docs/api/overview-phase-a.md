@@ -67,7 +67,11 @@ This document aligns API docs with the actual implementation for the current Sta
 - `POST /sync-tasks/{id}/run`
 - `POST /sync-tasks/{id}/retry`
 - `GET /sync-tasks/{id}/receipts`
-  - manual run endpoint now attempts worker dispatch via python-sync internal trigger URL
+  - manual run endpoint attempts worker dispatch via python-sync internal trigger URL
+  - dispatch failure mode is configurable by `SYNC_MANUAL_RUN_DISPATCH_FAILURE_MODE`:
+    - `mark_manual_review` (default): return `503`, task moves to `MANUAL_REVIEW`
+    - `keep_queued`: return `202`, task keeps queued state and stores `last_error_*`
+  - manual run dispatch result is persisted into `audit_logs`
 
 ### Webhooks
 

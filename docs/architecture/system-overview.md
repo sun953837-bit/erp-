@@ -22,3 +22,4 @@ V1.1 focuses on a trusted sync middle platform skeleton for cross-border CRM + E
   - per-task max pull record guard
   - payload size protection
   - raw event-key idempotent persistence check
+- Raw tables enforce idempotency at DB level with unique `(sync_task_id, event_key)` constraints.

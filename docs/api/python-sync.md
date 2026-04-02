@@ -18,6 +18,7 @@ Base URL: `http://localhost:8100`
     - `WORKER_MAX_PAYLOAD_BYTES` protects request/response payloads and receipt logs.
     - `WORKER_MAX_ROW_PAYLOAD_BYTES` protects per-row raw payload persistence.
   - Raw idempotency guard: skip duplicate `event_key` rows for the same `sync_task_id`.
+  - DB idempotency guard: unique index on `(sync_task_id, event_key)` for each `raw_*` table.
 - Advance state by state-machine rules.
 - Do not write directly into ERP business tables for pull flows; raw ingest first, then mapped by PHP channel-hub mapping job.
 - When adapter result indicates auth expiration/revoke, worker writes back channel account auth status to PHP API endpoint:

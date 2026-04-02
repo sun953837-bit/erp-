@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from app.adapters.base import BasePlatformAdapter
@@ -129,7 +129,8 @@ class MockProviderBase(BasePlatformAdapter):
         records: list[dict[str, Any]],
     ) -> dict[str, Any]:
         biz_id = payload.get("biz_id") or payload.get("task_no") or "biz"
-        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        now_utc = datetime.now(timezone.utc)
+        timestamp = now_utc.strftime("%Y%m%d%H%M%S")
         external_id = f"{self.provider_name}-{action}-{biz_id}-{timestamp}"
         return self.make_response(
             success=True,
@@ -142,6 +143,6 @@ class MockProviderBase(BasePlatformAdapter):
                 "provider": self.provider_name,
                 "action": action,
                 "records": records,
-                "generated_at": datetime.utcnow().isoformat(),
+                "generated_at": now_utc.isoformat(),
             },
         )

@@ -12,6 +12,7 @@ Base URL: `http://localhost:8100`
 - For pull tasks, persist raw payload to `raw_orders` / `raw_refunds` / `raw_listings` / `raw_services`.
   - If payload contains `records[]`, worker now writes one `raw_*` row per record.
   - Each row payload keeps single-record shape (`raw_payload.records=[record]`) for deterministic mapping.
+  - Pull action failures (`success=false`) do not write `raw_*` rows.
 - Advance state by state-machine rules.
 - Do not write directly into ERP business tables for pull flows; raw ingest first, then mapped by PHP channel-hub mapping job.
 - When adapter result indicates auth expiration/revoke, worker writes back channel account auth status to PHP API endpoint:

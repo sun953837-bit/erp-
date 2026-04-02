@@ -139,6 +139,9 @@ def _persist_raw_pull_record(
     if endpoint not in {"pull_orders", "pull_refunds", "pull_listings", "pull_services"}:
         return
 
+    if not bool(result.get("success")):
+        return
+
     now = datetime.utcnow()
     raw_payload = result.get("raw_payload")
     external_id = result.get("external_id")

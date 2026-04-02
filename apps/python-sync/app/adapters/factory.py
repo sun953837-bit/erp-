@@ -2,8 +2,8 @@ from app.adapters.amazon_mock import AmazonMockAdapter
 from app.adapters.japan_mock import JapanMockAdapter
 from app.adapters.korea_mock import KoreaMockAdapter
 from app.adapters.tiktok_mock import TiktokMockAdapter
+from app.adapters.unsupported_adapter import UnsupportedPlatformAdapter
 from app.adapters.xianyu_adapter import XianyuAdapter
-from app.adapters.xianyu_mock import XianyuMockAdapter
 from app.adapters.zbj_adapter import ZbjAdapter
 from app.adapters.base import BasePlatformAdapter
 
@@ -21,7 +21,7 @@ class AdapterFactory:
 
     def get(self, platform_code: str) -> BasePlatformAdapter:
         code = (platform_code or "").lower()
-        return self._providers.get(code, XianyuMockAdapter())
+        return self._providers.get(code, UnsupportedPlatformAdapter(code))
 
 
 adapter_factory = AdapterFactory()

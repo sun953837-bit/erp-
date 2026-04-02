@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
+from app.adapters.http_pull_kernel import HttpPullError, fetch_http_pull_records
 from app.adapters.xianyu_mock import XianyuMockAdapter
 from app.core.config import settings
 
@@ -21,7 +18,6 @@ class XianyuAdapter(XianyuMockAdapter):
             source_mode=settings.xianyu_orders_source_mode,
             endpoint=settings.xianyu_orders_endpoint,
             extra_params_json=settings.xianyu_orders_extra_params_json,
-            error_code="XY_PULL_ORDERS_ERROR",
             normalize_record=self._normalize_order_record,
             id_keys=["external_order_id", "order_id", "id", "biz_order_id", "trade_no"],
             fallback=super().pull_orders,
@@ -34,7 +30,6 @@ class XianyuAdapter(XianyuMockAdapter):
             source_mode=settings.xianyu_refunds_source_mode,
             endpoint=settings.xianyu_refunds_endpoint,
             extra_params_json=settings.xianyu_refunds_extra_params_json,
-            error_code="XY_PULL_REFUNDS_ERROR",
             normalize_record=self._normalize_refund_record,
             id_keys=["external_refund_id", "refund_id", "id"],
             fallback=super().pull_refunds,
@@ -47,7 +42,6 @@ class XianyuAdapter(XianyuMockAdapter):
             source_mode=settings.xianyu_listings_source_mode,
             endpoint=settings.xianyu_listings_endpoint,
             extra_params_json=settings.xianyu_listings_extra_params_json,
-            error_code="XY_PULL_LISTINGS_ERROR",
             normalize_record=self._normalize_listing_record,
             id_keys=["external_listing_id", "listing_id", "id"],
             fallback=super().pull_listings,
@@ -61,7 +55,6 @@ class XianyuAdapter(XianyuMockAdapter):
         source_mode: str,
         endpoint: str,
         extra_params_json: str,
-        error_code: str,
         normalize_record,
         id_keys: list[str],
         fallback,
@@ -71,7 +64,20 @@ class XianyuAdapter(XianyuMockAdapter):
             return fallback(payload)
 
         try:
-            records, meta = self._fetch_records(payload, endpoint, extra_params_json, id_keys, normalize_record)
+            records, meta = fetch_http_pull_records(
+                provider=self.provider_name,
+                action=action,
+                payload=payload,
+                endpoint=endpoint,
+                extra_params_json=extra_params_json,
+                access_token=settings.xianyu_access_token,
+                app_key=settings.xianyu_app_key,
+                timeout_seconds=settings.xianyu_http_timeout_seconds,
+                retry_attempts=settings.xianyu_http_retry_attempts,
+                retry_backoff_seconds=settings.xianyu_http_retry_backoff_seconds,
+                rate_limit_per_second=settings.xianyu_http_rate_limit_per_second,
+                normalize_record=normalize_record,
+            )
             return self.make_response(
                 success=True,
                 accepted=False,
@@ -84,8 +90,28 @@ class XianyuAdapter(XianyuMockAdapter):
                     "action": action,
                     "source": "http",
                     "records": records,
-                    "meta": meta,
+                    "meta": {**meta, "id_keys": id_keys},
                     "generated_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+        except HttpPullError as exc:
+            message = f"xianyu {action} http source failed: {exc.message}"
+            return self.make_response(
+                success=False,
+                accepted=False,
+                final=True,
+                code=exc.code,
+                message=message[:500],
+                external_id=self._build_external_id(payload),
+                raw_payload={
+                    "provider": self.provider_name,
+                    "action": action,
+                    "source": "http",
+                    "error": exc.message[:1000],
+                    "meta": {
+                        "http_status": exc.http_status,
+                        "retry_after_seconds": exc.retry_after_seconds,
+                    },
                 },
             )
         except Exception as exc:  # noqa: BLE001
@@ -94,7 +120,7 @@ class XianyuAdapter(XianyuMockAdapter):
                 success=False,
                 accepted=False,
                 final=True,
-                code=error_code,
+                code="PULL_HTTP_REQUEST_FAILED",
                 message=message[:500],
                 external_id=self._build_external_id(payload),
                 raw_payload={
@@ -104,117 +130,6 @@ class XianyuAdapter(XianyuMockAdapter):
                     "error": str(exc)[:1000],
                 },
             )
-
-    def _fetch_records(
-        self,
-        payload: dict[str, Any],
-        endpoint: str,
-        extra_params_json: str,
-        id_keys: list[str],
-        normalize_record,
-    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        endpoint_value = (endpoint or "").strip()
-        if endpoint_value == "":
-            raise ValueError("pull endpoint is empty")
-
-        query = self._build_query_params(payload, extra_params_json)
-        request_url = endpoint_value
-        if query:
-            request_url = f"{endpoint_value}{'&' if '?' in endpoint_value else '?'}{urlencode(query)}"
-
-        headers = {
-            "Accept": "application/json",
-        }
-        access_token = (settings.xianyu_access_token or "").strip()
-        if access_token != "":
-            headers["Authorization"] = f"Bearer {access_token}"
-
-        app_key = (settings.xianyu_app_key or "").strip()
-        if app_key != "":
-            headers["X-App-Key"] = app_key
-
-        timeout = max(1.0, float(settings.xianyu_http_timeout_seconds))
-        request = Request(url=request_url, headers=headers, method="GET")
-
-        try:
-            with urlopen(request, timeout=timeout) as response:
-                http_status = int(getattr(response, "status", 200))
-                body = response.read().decode("utf-8")
-        except HTTPError as exc:
-            raise RuntimeError(f"http error {exc.code}: {exc.reason}") from exc
-        except URLError as exc:
-            raise RuntimeError(f"network error: {exc.reason}") from exc
-
-        if http_status >= 400:
-            raise RuntimeError(f"http error status: {http_status}")
-
-        try:
-            decoded = json.loads(body)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("response is not valid json") from exc
-
-        records = self._extract_records(decoded)
-        normalized = []
-        for record in records:
-            item = normalize_record(record)
-            if item is not None:
-                normalized.append(item)
-
-        meta = {
-            "http_status": http_status,
-            "request_url": request_url,
-            "record_count": len(normalized),
-            "id_keys": id_keys,
-        }
-        return normalized, meta
-
-    def _build_query_params(self, payload: dict[str, Any], raw_extra: str) -> dict[str, str]:
-        query: dict[str, str] = {}
-        for key in ["since", "until", "cursor", "page", "page_size", "shop_id", "site_code", "biz_id"]:
-            value = payload.get(key)
-            if value is not None and value != "":
-                query[key] = str(value)
-
-        extra_text = (raw_extra or "").strip()
-        if extra_text != "":
-            try:
-                parsed_extra = json.loads(extra_text)
-            except json.JSONDecodeError as exc:
-                raise ValueError("extra params json is not valid json object") from exc
-
-            if not isinstance(parsed_extra, dict):
-                raise ValueError("extra params json must be json object")
-
-            for key, value in parsed_extra.items():
-                if value is not None and value != "" and key not in query:
-                    query[str(key)] = str(value)
-
-        return query
-
-    @staticmethod
-    def _extract_records(decoded: Any) -> list[dict[str, Any]]:
-        if isinstance(decoded, list):
-            return [item for item in decoded if isinstance(item, dict)]
-
-        if not isinstance(decoded, dict):
-            return []
-
-        candidates = [
-            decoded.get("records"),
-            decoded.get("orders"),
-            decoded.get("items"),
-            decoded.get("list"),
-            decoded.get("data", {}).get("records") if isinstance(decoded.get("data"), dict) else None,
-            decoded.get("data", {}).get("orders") if isinstance(decoded.get("data"), dict) else None,
-            decoded.get("data", {}).get("items") if isinstance(decoded.get("data"), dict) else None,
-            decoded.get("data", {}).get("list") if isinstance(decoded.get("data"), dict) else None,
-        ]
-
-        for candidate in candidates:
-            if isinstance(candidate, list):
-                return [item for item in candidate if isinstance(item, dict)]
-
-        return []
 
     def _normalize_order_record(self, record: dict[str, Any]) -> dict[str, Any] | None:
         external_order_id = self._pick_first(

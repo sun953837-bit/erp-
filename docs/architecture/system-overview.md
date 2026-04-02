@@ -12,9 +12,13 @@ V1.1 focuses on a trusted sync middle platform skeleton for cross-border CRM + E
 ## Boundaries
 - PHP API does not call platform adapters directly.
 - Python sync service does not define migrations; it follows Laravel schema.
-- Providers are mock-only in this round.
+- Providers keep mock fallback, and `xianyu` / `zbj` support HTTP source mode with unified pull protocol.
 
 ## Reliability Rules
 - Never treat local submit as platform final success.
 - Persist request/response/polling receipts for every sync attempt.
 - Idempotency is enforced by `idempotency_key` unique constraint.
+- Pull ingestion adds worker-side protection:
+  - per-task max pull record guard
+  - payload size protection
+  - raw event-key idempotent persistence check

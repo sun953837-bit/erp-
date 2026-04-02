@@ -6,6 +6,7 @@
 **/.pytest_cache/
 **/.mypy_cache/
 **/.venv/
+**/.phpunit.cache/
 **/*.db
 **/*.sqlite
 **/*.sqlite3

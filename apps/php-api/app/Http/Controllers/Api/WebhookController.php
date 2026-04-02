@@ -110,6 +110,7 @@ class WebhookController extends Controller
                     return [
                         'deduplicated' => false,
                         'event' => $event,
+                        'failed' => false,
                     ];
                 } catch (Throwable $e) {
                     $event->status = 'FAILED';
@@ -127,7 +128,12 @@ class WebhookController extends Controller
                         ]
                     );
 
-                    throw $e;
+                    return [
+                        'deduplicated' => false,
+                        'event' => $event,
+                        'failed' => true,
+                        'error_message' => $event->error_message,
+                    ];
                 }
             });
         } catch (QueryException $e) {
@@ -146,12 +152,25 @@ class WebhookController extends Controller
                 }
             }
             return ApiResponse::error('DB_ERROR', 'webhook persistence failed', 500);
-        } catch (Throwable $e) {
+        } catch (Throwable $e) { // unexpected transaction failure
             return ApiResponse::error('PROCESSING_ERROR', $e->getMessage(), 500);
         }
 
         /** @var WebhookEvent $event */
         $event = $result['event'];
+        if ((bool) ($result['failed'] ?? false)) {
+            return ApiResponse::error(
+                'PROCESSING_ERROR',
+                (string) ($result['error_message'] ?? 'webhook processing failed'),
+                500,
+                [
+                    'event_id' => $event->id,
+                    'event_key' => $event->event_key,
+                    'status' => $event->status,
+                    'attempts' => $event->attempts,
+                ]
+            );
+        }
         return ApiResponse::success([
             'event_id' => $event->id,
             'event_key' => $event->event_key,

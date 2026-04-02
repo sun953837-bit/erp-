@@ -15,12 +15,18 @@ class Settings(BaseSettings):
     redis_port: int = 6379
 
     worker_batch_size: int = 20
+    worker_max_pull_records_per_task: int = 200
+    worker_max_payload_bytes: int = 1048576
+    worker_max_row_payload_bytes: int = 262144
 
     xianyu_orders_source_mode: str = "mock"
     xianyu_orders_endpoint: str = ""
     xianyu_access_token: str = ""
     xianyu_app_key: str = ""
     xianyu_http_timeout_seconds: float = 8.0
+    xianyu_http_retry_attempts: int = 2
+    xianyu_http_retry_backoff_seconds: float = 0.5
+    xianyu_http_rate_limit_per_second: float = 5.0
     xianyu_orders_extra_params_json: str = ""
     xianyu_refunds_source_mode: str = "mock"
     xianyu_refunds_endpoint: str = ""
@@ -34,6 +40,9 @@ class Settings(BaseSettings):
     zbj_access_token: str = ""
     zbj_app_key: str = ""
     zbj_http_timeout_seconds: float = 8.0
+    zbj_http_retry_attempts: int = 2
+    zbj_http_retry_backoff_seconds: float = 0.5
+    zbj_http_rate_limit_per_second: float = 5.0
     zbj_orders_extra_params_json: str = ""
     zbj_refunds_source_mode: str = "mock"
     zbj_refunds_endpoint: str = ""

@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\Bi\BiEtlService;
+use App\Services\ChannelHub\RawChannelMappingService;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
@@ -29,3 +30,16 @@ Schedule::command('bi:etl-refresh --mode=incremental --window-days='.max(1, (int
     ->cron((string) env('BI_ETL_CRON', '15 * * * *'))
     ->withoutOverlapping()
     ->when(static fn (): bool => filter_var((string) env('BI_ETL_AUTO_REFRESH_ENABLED', 'false'), FILTER_VALIDATE_BOOL));
+
+Artisan::command('channel:map-raw {--limit=100 : max pending rows to process per table}', function (RawChannelMappingService $service) {
+    $limit = max(1, min(1000, (int) $this->option('limit')));
+    $result = $service->run(['limit' => $limit]);
+    $this->info('Raw channel mapping completed.');
+    $this->line(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    return 0;
+})->describe('Map pending raw channel records into ERP service-order and refund tables');
+
+Schedule::command('channel:map-raw --limit='.max(1, (int) env('RAW_MAPPING_LIMIT', 100)))
+    ->cron((string) env('RAW_MAPPING_CRON', '*/2 * * * *'))
+    ->withoutOverlapping()
+    ->when(static fn (): bool => filter_var((string) env('RAW_MAPPING_AUTO_ENABLED', 'true'), FILTER_VALIDATE_BOOL));

@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\PlatformProductMappingController;
 use App\Http\Controllers\Api\ProductSkuController;
 use App\Http\Controllers\Api\ProductSpuController;
+use App\Http\Controllers\Api\RawMappingController;
 use App\Http\Controllers\Api\ServiceOrderController;
 use App\Http\Controllers\Api\ShopController;
 use App\Http\Controllers\Api\SyncReceiptLogController;
@@ -64,3 +65,6 @@ Route::get('/sync-tasks/{id}/receipts', [SyncReceiptLogController::class, 'index
 Route::get('/webhooks/events', [WebhookController::class, 'index']);
 Route::post('/webhooks/events/{id}/retry', [WebhookController::class, 'retry']);
 Route::post('/webhooks/{platform}/events', [WebhookController::class, 'receive']);
+
+Route::get('/channel-hub/raw-mapping/summary', [RawMappingController::class, 'summary']);
+Route::post('/channel-hub/raw-mapping/run', [RawMappingController::class, 'run']);

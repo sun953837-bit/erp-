@@ -12,6 +12,8 @@ class RefundRecord extends Model
         'refund_no',
         'service_order_id',
         'payment_record_id',
+        'platform_code',
+        'external_refund_id',
         'amount',
         'currency',
         'status',

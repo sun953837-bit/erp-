@@ -31,6 +31,15 @@ This document aligns API docs with the actual implementation for the current Sta
 - `PATCH /channel-accounts/{id}/auth-status`
 - `PATCH /channel-accounts/by-shop/{shopId}/auth-status`
 
+### Channel Hub / Raw Mapping
+
+- `GET /channel-hub/raw-mapping/summary`
+- `POST /channel-hub/raw-mapping/run`
+  - Optional `limit` (default `100`, max `1000`)
+  - Maps `raw_orders(PENDING)` into `service_orders`
+  - Maps `raw_refunds(PENDING)` into `refund_records` / `reconciliation_records`
+  - Raw rows are marked as `MAPPED`, `SKIPPED`, or `FAILED`
+
 ### Products
 
 - `GET /products/spu`

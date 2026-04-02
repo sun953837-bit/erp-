@@ -23,10 +23,11 @@ This file is the single source of truth for migration status in `codex53_tmp`.
 11. `2026_04_02_000011_create_service_order_finance_delivery_tables.php`
 12. `2026_04_02_000012_create_bi_dimension_and_fact_tables.php`
 13. `2026_04_02_000013_create_bi_etl_runs_table.php`
+14. `2026_04_02_000014_add_external_refund_fields_to_refund_records.php`
 
 ## Current HEAD
 
-- HEAD migration file: `2026_04_02_000013_create_bi_etl_runs_table.php`
+- HEAD migration file: `2026_04_02_000014_add_external_refund_fields_to_refund_records.php`
 
 ## Scope Notes
 

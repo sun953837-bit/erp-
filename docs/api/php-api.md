@@ -22,6 +22,14 @@ Contract baseline for P0.5 is maintained in `docs/api/overview-phase-a.md`.
 - `PATCH /channel-accounts/{id}/auth-status`
 - `PATCH /channel-accounts/by-shop/{shopId}/auth-status`
 
+## Channel Hub / Raw Mapping
+- `GET /channel-hub/raw-mapping/summary`
+- `POST /channel-hub/raw-mapping/run`
+  - optional payload: `{"limit": 100}`
+  - maps pending `raw_orders` -> `service_orders`
+  - maps pending `raw_refunds` -> `refund_records` + `reconciliation_records`
+  - updates `raw_orders.mapped_status` / `raw_refunds.mapped_status` (`MAPPED|SKIPPED|FAILED`)
+
 ## Products
 - `GET /products/spu`
 - `POST /products/spu`
@@ -102,6 +110,13 @@ CLI + schedule:
   - `BI_ETL_AUTO_REFRESH_ENABLED`
   - `BI_ETL_CRON`
   - `BI_ETL_INCREMENTAL_WINDOW_DAYS`
+
+Raw mapping CLI + schedule:
+- `php artisan channel:map-raw --limit=100`
+- scheduled raw mapping is controlled by `.env`:
+  - `RAW_MAPPING_AUTO_ENABLED`
+  - `RAW_MAPPING_CRON`
+  - `RAW_MAPPING_LIMIT`
 
 ## Legacy Contract Notes
 

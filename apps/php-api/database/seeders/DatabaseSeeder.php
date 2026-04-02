@@ -59,7 +59,11 @@ class DatabaseSeeder extends Seeder
             'notifications',
             'webhook_events',
         ] as $table) {
-            DB::table($table)->truncate();
+            if ($driver === 'sqlite') {
+                DB::table($table)->delete();
+            } else {
+                DB::table($table)->truncate();
+            }
         }
         if ($driver === 'mysql') {
             DB::statement('SET FOREIGN_KEY_CHECKS=1');

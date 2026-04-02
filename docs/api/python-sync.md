@@ -29,12 +29,14 @@ Base URL: `http://localhost:8100`
 - xianyu_mock
 - zbj_mock
 
-## Xianyu Pull Orders Source Mode
+## Xianyu/ZBJ Pull Orders Source Mode
 
-`xianyu` adapter supports configurable source mode for `pull_orders`:
+`xianyu` and `zbj` adapters support configurable source mode for `pull_orders`:
 
 - `XIANYU_ORDERS_SOURCE_MODE=mock` (default): keep existing mock records behavior.
 - `XIANYU_ORDERS_SOURCE_MODE=http`: fetch from external HTTP endpoint and normalize into Stage-1 raw format.
+- `ZBJ_ORDERS_SOURCE_MODE=mock` (default): keep existing mock records behavior.
+- `ZBJ_ORDERS_SOURCE_MODE=http`: fetch from external HTTP endpoint and normalize into Stage-1 raw format.
 
 Related env vars:
 
@@ -43,6 +45,11 @@ Related env vars:
 - `XIANYU_APP_KEY` (optional, `X-App-Key`)
 - `XIANYU_HTTP_TIMEOUT_SECONDS`
 - `XIANYU_ORDERS_EXTRA_PARAMS_JSON` (optional JSON object merged into query params)
+- `ZBJ_ORDERS_ENDPOINT`
+- `ZBJ_ACCESS_TOKEN` (optional, `Authorization: Bearer`)
+- `ZBJ_APP_KEY` (optional, `X-App-Key`)
+- `ZBJ_HTTP_TIMEOUT_SECONDS`
+- `ZBJ_ORDERS_EXTRA_PARAMS_JSON` (optional JSON object merged into query params)
 
 `payload.mock_mode` options:
 - `success_immediate`

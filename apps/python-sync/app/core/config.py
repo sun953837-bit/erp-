@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     xianyu_http_timeout_seconds: float = 8.0
     xianyu_orders_extra_params_json: str = ""
 
+    zbj_orders_source_mode: str = "mock"
+    zbj_orders_endpoint: str = ""
+    zbj_access_token: str = ""
+    zbj_app_key: str = ""
+    zbj_http_timeout_seconds: float = 8.0
+    zbj_orders_extra_params_json: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

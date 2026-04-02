@@ -4,7 +4,7 @@ from app.adapters.korea_mock import KoreaMockAdapter
 from app.adapters.tiktok_mock import TiktokMockAdapter
 from app.adapters.xianyu_adapter import XianyuAdapter
 from app.adapters.xianyu_mock import XianyuMockAdapter
-from app.adapters.zbj_mock import ZbjMockAdapter
+from app.adapters.zbj_adapter import ZbjAdapter
 from app.adapters.base import BasePlatformAdapter
 
 
@@ -16,7 +16,7 @@ class AdapterFactory:
             "japan": JapanMockAdapter(),
             "korea": KoreaMockAdapter(),
             "xianyu": XianyuAdapter(),
-            "zbj": ZbjMockAdapter(),
+            "zbj": ZbjAdapter(),
         }
 
     def get(self, platform_code: str) -> BasePlatformAdapter:

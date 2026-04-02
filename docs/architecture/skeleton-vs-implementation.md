@@ -14,7 +14,7 @@
 - `apps/python-sync`
   - Worker/scheduler framework is present.
   - Provider adapters are mock implementations (`xianyu`, `zbj` included).
-  - `xianyu pull_orders` can be switched to HTTP source mode via env config (others remain mock).
+  - `xianyu/zbj pull_orders` can be switched to HTTP source mode via env config (other providers remain mock).
   - Pull-task raw persistence writes into `raw_orders` / `raw_refunds` / `raw_listings` / `raw_services`.
   - Pull-task raw ingest now persists one `raw_*` row per `records[]` item when batch payload is returned.
 - `docs/api`, `docs/architecture`

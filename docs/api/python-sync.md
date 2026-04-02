@@ -9,7 +9,7 @@ Base URL: `http://localhost:8100`
 - Scan `sync_tasks` where status in `PENDING`, `RETRYING` and retry time is due.
 - Execute provider action by `task_type`.
 - Write `sync_receipt_logs` for `REQUEST` and `RESPONSE`.
-- For pull tasks, persist raw payload to `raw_orders` / `raw_refunds` / `raw_listings`.
+- For pull tasks, persist raw payload to `raw_orders` / `raw_refunds` / `raw_listings` / `raw_services`.
 - Advance state by state-machine rules.
 
 ## Polling Scheduler Responsibilities
@@ -40,4 +40,5 @@ Base URL: `http://localhost:8100`
 - `pull_orders`
 - `pull_refunds`
 - `pull_listings`
+- `pull_services`
 - `query_result`

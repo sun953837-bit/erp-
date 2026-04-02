@@ -2,10 +2,12 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ChannelAccountController;
+use App\Http\Controllers\Api\FinanceCenterController;
 use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\PlatformProductMappingController;
 use App\Http\Controllers\Api\ProductSkuController;
 use App\Http\Controllers\Api\ProductSpuController;
+use App\Http\Controllers\Api\ServiceOrderController;
 use App\Http\Controllers\Api\ShopController;
 use App\Http\Controllers\Api\SyncReceiptLogController;
 use App\Http\Controllers\Api\SyncTaskController;
@@ -32,6 +34,18 @@ Route::get('/products/spu', [ProductSpuController::class, 'index']);
 Route::post('/products/spu', [ProductSpuController::class, 'store']);
 Route::get('/products/sku', [ProductSkuController::class, 'index']);
 Route::post('/products/sku', [ProductSkuController::class, 'store']);
+
+Route::get('/service-orders', [ServiceOrderController::class, 'index']);
+Route::post('/service-orders', [ServiceOrderController::class, 'store']);
+Route::get('/service-orders/{id}', [ServiceOrderController::class, 'show']);
+Route::patch('/service-orders/{id}/status', [ServiceOrderController::class, 'updateStatus']);
+
+Route::get('/finance/receivables', [FinanceCenterController::class, 'receivables']);
+Route::get('/finance/payments', [FinanceCenterController::class, 'payments']);
+Route::post('/finance/payments', [FinanceCenterController::class, 'createPayment']);
+Route::get('/finance/refunds', [FinanceCenterController::class, 'refunds']);
+Route::post('/finance/refunds', [FinanceCenterController::class, 'createRefund']);
+Route::get('/finance/reconciliations', [FinanceCenterController::class, 'reconciliations']);
 
 Route::get('/platform-product-mappings', [PlatformProductMappingController::class, 'index']);
 Route::post('/platform-product-mappings', [PlatformProductMappingController::class, 'store']);

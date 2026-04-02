@@ -38,6 +38,13 @@ This document aligns API docs with the actual implementation for the current Sta
 - `GET /products/sku`
 - `POST /products/sku`
 
+### Service Orders
+
+- `GET /service-orders`
+- `POST /service-orders`
+- `GET /service-orders/{id}`
+- `PATCH /service-orders/{id}/status`
+
 ### Platform Mapping
 
 - `GET /platform-product-mappings`
@@ -61,6 +68,15 @@ This document aligns API docs with the actual implementation for the current Sta
   - Idempotency enabled (`X-Event-Id` or payload key fallback)
   - Failed processing is persisted for retry callbacks
 
+### Finance
+
+- `GET /finance/receivables`
+- `GET /finance/payments`
+- `POST /finance/payments`
+- `GET /finance/refunds`
+- `POST /finance/refunds`
+- `GET /finance/reconciliations`
+
 ## Implemented Python Sync Endpoint
 
 - `GET /internal/health`
@@ -69,16 +85,16 @@ This document aligns API docs with the actual implementation for the current Sta
 
 ### Order status update API
 
-- Current status: not implemented.
-- Canonical reservation for future implementation: `PATCH /orders/{id}/status`.
+- Legacy generic route `PATCH /orders/{id}/status` is not implemented.
+- Service-order status update is implemented as `PATCH /service-orders/{id}/status`.
 - `PUT /orders/{id}/status` is not documented as active in Stage-1.
 
 ### `finance/receivables`
 
-- Current status: not implemented in this repository.
-- Any document mentioning `finance/receivables` must be treated as future scope until API and schema are added.
+- Current status: implemented as `GET /finance/receivables`.
+- Receivable auto-creation is triggered on service-order confirmation.
 
 ## Stage-1 Boundary
 
 - Current APIs focus on sync scaffolding and product/shop mapping flow.
-- Service-order delivery-finance closed loop APIs are not in current implementation and are tracked as P1 tasks.
+- A minimal P1 subset is implemented: service-order status flow, auto receivable, payment/refund/reconciliation linkage.

@@ -28,6 +28,10 @@ class BasePlatformAdapter(ABC):
         pass
 
     @abstractmethod
+    def pull_services(self, payload: dict[str, Any]) -> dict[str, Any]:
+        pass
+
+    @abstractmethod
     def query_result(self, payload: dict[str, Any]) -> dict[str, Any]:
         pass
 

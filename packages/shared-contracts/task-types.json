@@ -4,5 +4,6 @@
   "inventory_sync",
   "order_pull",
   "refund_pull",
-  "listing_pull"
+  "listing_pull",
+  "service_pull"
 ]

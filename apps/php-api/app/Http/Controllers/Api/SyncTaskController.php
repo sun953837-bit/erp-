@@ -18,6 +18,7 @@ class SyncTaskController extends Controller
         'order_pull',
         'refund_pull',
         'listing_pull',
+        'service_pull',
     ];
 
     private array $retryableStatus = [

@@ -55,6 +55,8 @@ def execute_task_action(task: SyncTask, adapter_payload: dict) -> tuple[str, dic
         return "pull_refunds", adapter.pull_refunds(adapter_payload)
     if task.task_type == "listing_pull":
         return "pull_listings", adapter.pull_listings(adapter_payload)
+    if task.task_type == "service_pull":
+        return "pull_services", adapter.pull_services(adapter_payload)
 
     return (
         "unsupported",

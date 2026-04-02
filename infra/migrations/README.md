@@ -19,10 +19,12 @@ This file is the single source of truth for migration status in `codex53_tmp`.
 7. `2026_02_22_000007_create_audit_logs_and_notifications_tables.php`
 8. `2026_04_02_000008_create_webhook_events_table.php`
 9. `2026_04_02_000009_create_raw_channel_tables.php`
+10. `2026_04_02_000010_create_raw_services_table.php`
+11. `2026_04_02_000011_create_service_order_finance_delivery_tables.php`
 
 ## Current HEAD
 
-- HEAD migration file: `2026_04_02_000009_create_raw_channel_tables.php`
+- HEAD migration file: `2026_04_02_000011_create_service_order_finance_delivery_tables.php`
 
 ## Scope Notes
 

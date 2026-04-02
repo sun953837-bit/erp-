@@ -28,6 +28,12 @@ Contract baseline for P0.5 is maintained in `docs/api/overview-phase-a.md`.
 - `GET /products/sku`
 - `POST /products/sku`
 
+## Service Orders
+- `GET /service-orders`
+- `POST /service-orders`
+- `GET /service-orders/{id}`
+- `PATCH /service-orders/{id}/status`
+
 ## Platform Mapping
 - `GET /platform-product-mappings`
 - `POST /platform-product-mappings`
@@ -48,6 +54,7 @@ Contract baseline for P0.5 is maintained in `docs/api/overview-phase-a.md`.
 - `order_pull`
 - `refund_pull`
 - `listing_pull`
+- `service_pull`
 
 ## Webhooks
 
@@ -67,11 +74,18 @@ Behavior:
 - failed processing -> `500`, event status stored as `FAILED` and can be retried by provider callback
 - failed events can be queried via `GET /webhooks/events?status=FAILED` and retried with `POST /webhooks/events/{id}/retry`
 
-## Not In Current Scope (Explicit)
+## Finance
+- `GET /finance/receivables`
+- `GET /finance/payments`
+- `POST /finance/payments`
+- `GET /finance/refunds`
+- `POST /finance/refunds`
+- `GET /finance/reconciliations`
 
-- `PATCH /orders/{id}/status` is reserved but not implemented.
+## Legacy Contract Notes
+
+- `PATCH /orders/{id}/status` (legacy generic order route) is still not implemented.
 - `PUT /orders/{id}/status` is not an active contract.
-- `finance/receivables` APIs are not implemented in this repository.
 
 ## Unified Response
 ```json

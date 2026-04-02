@@ -11,6 +11,7 @@ from app.core.database import SessionLocal
 from app.models.raw_listing import RawListing
 from app.models.raw_order import RawOrder
 from app.models.raw_refund import RawRefund
+from app.models.raw_service import RawService
 from app.models.sync_task import SyncTask
 from app.services.sync_executor import (
     apply_execution_result,
@@ -129,7 +130,7 @@ def _persist_raw_pull_record(
     result: dict,
     request_payload: dict,
 ) -> None:
-    if endpoint not in {"pull_orders", "pull_refunds", "pull_listings"}:
+    if endpoint not in {"pull_orders", "pull_refunds", "pull_listings", "pull_services"}:
         return
 
     now = datetime.utcnow()
@@ -168,6 +169,24 @@ def _persist_raw_pull_record(
                 site_code=task.site_code,
                 event_key=task.task_no,
                 external_refund_id=str(external_id) if external_id else None,
+                payload_json=merged_payload,
+                mapped_status="PENDING",
+                received_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        return
+
+    if endpoint == "pull_services":
+        session.add(
+            RawService(
+                sync_task_id=task.id,
+                platform_code=task.platform_code,
+                shop_id=task.shop_id,
+                site_code=task.site_code,
+                event_key=task.task_no,
+                external_service_id=str(external_id) if external_id else None,
                 payload_json=merged_payload,
                 mapped_status="PENDING",
                 received_at=now,

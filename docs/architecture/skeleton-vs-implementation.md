@@ -8,10 +8,11 @@
   - Laravel routes/controllers/models/migrations are executable.
   - Sync task creation/list/retry and receipt query are available.
   - Manual run entry and webhook intake (signature + idempotency + failure log) are available.
+  - Minimal service-order and finance linkage is available (status machine + receivable/payment/refund/reconciliation APIs).
 - `apps/python-sync`
   - Worker/scheduler framework is present.
   - Provider adapters are mock implementations (`xianyu`, `zbj` included).
-  - Pull-task raw persistence writes into `raw_orders` / `raw_refunds` / `raw_listings`.
+  - Pull-task raw persistence writes into `raw_orders` / `raw_refunds` / `raw_listings` / `raw_services`.
 - `docs/api`, `docs/architecture`
   - Documentation base exists and can be aligned with runtime truth.
 

@@ -20,6 +20,14 @@ class DatabaseSeeder extends Seeder
             'raw_orders',
             'raw_refunds',
             'raw_listings',
+            'raw_services',
+            'reconciliation_records',
+            'refund_records',
+            'payment_records',
+            'receivable_records',
+            'tickets',
+            'projects',
+            'service_orders',
             'sync_tasks',
             'platform_product_mappings',
             'products_sku',
@@ -76,6 +84,81 @@ class DatabaseSeeder extends Seeder
                 'created_at' => $now,
                 'updated_at' => $now,
             ],
+        ]);
+
+        $serviceOrderId = DB::table('service_orders')->insertGetId([
+            'order_no' => 'SO'.Carbon::now()->format('YmdHis').'SEED',
+            'platform_code' => 'zbj',
+            'shop_id' => $amazonShopId,
+            'external_order_id' => 'ZBJ-ORD-SEED-001',
+            'service_name' => 'ERP实施服务',
+            'customer_name' => 'Demo Customer',
+            'currency' => 'CNY',
+            'amount' => 5000.00,
+            'status' => 'confirmed',
+            'delivery_mode' => 'project',
+            'project_id' => null,
+            'ticket_id' => null,
+            'meta_json' => json_encode(['seed' => true]),
+            'confirmed_at' => $now,
+            'completed_at' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $projectId = DB::table('projects')->insertGetId([
+            'project_no' => 'PRJ'.Carbon::now()->format('YmdHis').'SEED',
+            'service_order_id' => $serviceOrderId,
+            'name' => 'ERP实施服务 项目交付',
+            'status' => 'pending',
+            'owner' => null,
+            'meta_json' => json_encode(['seed' => true]),
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('service_orders')->where('id', $serviceOrderId)->update([
+            'project_id' => $projectId,
+            'updated_at' => $now,
+        ]);
+
+        $receivableId = DB::table('receivable_records')->insertGetId([
+            'receivable_no' => 'RCV'.Carbon::now()->format('YmdHis').'SEED',
+            'service_order_id' => $serviceOrderId,
+            'amount' => 5000.00,
+            'received_amount' => 2000.00,
+            'currency' => 'CNY',
+            'status' => 'PARTIAL',
+            'due_at' => $now->copy()->addDays(7),
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $paymentId = DB::table('payment_records')->insertGetId([
+            'payment_no' => 'PAY'.Carbon::now()->format('YmdHis').'SEED',
+            'service_order_id' => $serviceOrderId,
+            'receivable_record_id' => $receivableId,
+            'amount' => 2000.00,
+            'currency' => 'CNY',
+            'paid_at' => $now,
+            'channel' => 'bank_transfer',
+            'reference_no' => 'PAYMENT-SEED-001',
+            'note' => 'seed payment',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('reconciliation_records')->insert([
+            'reconciliation_no' => 'REC'.Carbon::now()->format('YmdHis').'SEED',
+            'service_order_id' => $serviceOrderId,
+            'receivable_record_id' => $receivableId,
+            'refund_record_id' => null,
+            'delta_amount' => 2000.00,
+            'currency' => 'CNY',
+            'status' => 'CLOSED',
+            'note' => 'seed payment reconciliation',
+            'created_at' => $now,
+            'updated_at' => $now,
         ]);
 
         $adminUserId = DB::table('users')->insertGetId([

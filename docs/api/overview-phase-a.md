@@ -108,12 +108,14 @@ Legacy write freeze:
 
 - `GET /bi/etl/summary`
 - `POST /bi/etl/refresh`
-  - Full refresh: `mode=full`
-  - Incremental refresh: `mode=incremental`, `window_days=1..90`
+  - Mode: `full|incremental|stage1`
+  - `stage1` strategy: incremental first, auto-full when lag threshold exceeded
+- `POST /bi/etl/recover`
+  - failure compensation/replay entry for failed ETL runs
   - Refresh scope for Stage-1 theme tables:
     - `dim_platform`, `dim_shop`, `dim_customer`, `dim_service`, `dim_date`
     - `fact_service_orders`, `fact_after_sales`, `fact_settlements`, `fact_project_delivery`
-  - ETL run status is tracked in `bi_etl_runs`
+  - ETL run status + quality metrics are tracked in `bi_etl_runs`
   - `fact_after_sales` source policy:
     - `refund_record`: rows from `refund_records`
     - `service_order_status`: fallback rows for `service_orders.status=after_sale` without refund records

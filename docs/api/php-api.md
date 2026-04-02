@@ -119,6 +119,13 @@ Behavior:
 ## BI ETL (Stage-1 Minimal)
 - `GET /bi/etl/summary`
 - `POST /bi/etl/refresh`
+  - supported mode: `full|incremental|stage1`
+  - `stage1` strategy:
+    - default incremental
+    - auto-upgrade to full when `last_success_at` lag exceeds `BI_ETL_STAGE1_FULL_LAG_HOURS`
+- `POST /bi/etl/recover`
+  - failure compensation entrypoint
+  - invokes configured recover mode (`BI_ETL_FAILURE_RECOVER_MODE`)
   - Supported mode:
     - full refresh (`mode=full`)
     - incremental refresh (`mode=incremental`, `window_days=1..90`)
@@ -132,10 +139,18 @@ Behavior:
 CLI + schedule:
 - `php artisan bi:etl-refresh --mode=full`
 - `php artisan bi:etl-refresh --mode=incremental --window-days=3`
+- `php artisan bi:etl-refresh --mode=stage1 --window-days=3`
+- `php artisan bi:etl-recover`
 - scheduled incremental refresh is controlled by `.env`:
   - `BI_ETL_AUTO_REFRESH_ENABLED`
   - `BI_ETL_CRON`
   - `BI_ETL_INCREMENTAL_WINDOW_DAYS`
+  - `BI_ETL_STAGE1_FULL_LAG_HOURS`
+  - `BI_ETL_AUTO_RECOVER_ENABLED`
+  - `BI_ETL_RECOVER_CRON`
+  - `BI_ETL_FAILURE_RECOVER_MODE`
+  - `BI_ETL_ALERT_ENABLED`
+  - `BI_ETL_ALERT_PRIORITY`
 
 Raw mapping CLI + schedule:
 - `php artisan channel:map-raw --limit=100`

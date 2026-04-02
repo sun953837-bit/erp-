@@ -11,56 +11,128 @@ class BiEtlService
 {
     private const JOB_NAME = 'stage1_bi_etl';
     private const MAX_WINDOW_DAYS = 90;
+    private const STAGE1_MODE = 'stage1';
 
     public function refresh(array $options = []): array
     {
-        $mode = strtolower((string) ($options['mode'] ?? 'full'));
-        if (! in_array($mode, ['full', 'incremental'], true)) {
+        $requestedMode = strtolower((string) ($options['mode'] ?? self::STAGE1_MODE));
+        if (! in_array($requestedMode, ['full', 'incremental', self::STAGE1_MODE], true)) {
             throw new \InvalidArgumentException('unsupported refresh mode');
         }
 
-        $windowDays = (int) ($options['window_days'] ?? 3);
+        $windowDays = (int) ($options['window_days'] ?? (int) config('bi.stage1.incremental_window_days', 3));
         $windowDays = max(1, min(self::MAX_WINDOW_DAYS, $windowDays));
+        $runSnapshot = $this->fetchRunSnapshot();
+        $resolved = $this->resolveRefreshMode($requestedMode, $windowDays, $runSnapshot);
+        $effectiveMode = $resolved['effective_mode'];
+        $strategyReason = $resolved['strategy_reason'];
 
         $startedAt = CarbonImmutable::now();
         try {
-            $counts = DB::transaction(function () use ($mode, $windowDays): array {
-                if ($mode === 'full') {
+            $counts = DB::transaction(function () use ($effectiveMode, $windowDays): array {
+                if ($effectiveMode === 'full') {
                     return $this->runFullRefresh();
                 }
                 return $this->runIncrementalRefresh($windowDays);
             });
 
             $finishedAt = CarbonImmutable::now();
+            $quality = $this->buildQualityMetrics($counts);
             $result = [
-                'mode' => $mode,
-                'window_days' => $mode === 'incremental' ? $windowDays : null,
+                'mode' => $requestedMode,
+                'effective_mode' => $effectiveMode,
+                'strategy_reason' => $strategyReason,
+                'window_days' => $effectiveMode === 'incremental' ? $windowDays : null,
                 'started_at' => $startedAt->toDateTimeString(),
                 'finished_at' => $finishedAt->toDateTimeString(),
                 'counts' => $counts,
+                'quality' => $quality,
             ];
             $this->recordRun([
-                'last_mode' => $mode,
-                'last_window_days' => $mode === 'incremental' ? $windowDays : null,
+                'last_mode' => $requestedMode,
+                'last_effective_mode' => $effectiveMode,
+                'last_strategy_reason' => $strategyReason,
+                'last_window_days' => $effectiveMode === 'incremental' ? $windowDays : null,
                 'last_started_at' => $startedAt,
                 'last_finished_at' => $finishedAt,
                 'last_success_at' => $finishedAt,
                 'last_counts_json' => json_encode($counts, JSON_UNESCAPED_UNICODE),
+                'last_duration_ms' => max(1, (int) $finishedAt->diffInMilliseconds($startedAt)),
+                'last_total_rows' => $quality['total_rows'],
+                'last_zero_count_tables_json' => json_encode($quality['zero_tables'], JSON_UNESCAPED_UNICODE),
+                'last_quality_score' => $quality['quality_score'],
+                'consecutive_failures' => 0,
+                'last_alert_level' => $quality['alert_level'],
                 'last_error_message' => null,
             ]);
+            $this->emitBiAlert(
+                eventType: $quality['alert_level'] === 'OK' ? 'bi_etl_success' : 'bi_etl_quality_warn',
+                priority: $quality['alert_level'] === 'CRITICAL' ? 1 : 2,
+                title: sprintf('BI ETL %s', $quality['alert_level']),
+                content: json_encode([
+                    'requested_mode' => $requestedMode,
+                    'effective_mode' => $effectiveMode,
+                    'strategy_reason' => $strategyReason,
+                    'quality' => $quality,
+                    'counts' => $counts,
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                payload: [
+                    'mode' => $requestedMode,
+                    'effective_mode' => $effectiveMode,
+                    'quality' => $quality,
+                    'counts' => $counts,
+                ],
+                dedupeKey: sprintf('bi_etl:%s:%s', $quality['alert_level'], $finishedAt->format('YmdH')),
+            );
+            if ((int) ($runSnapshot['consecutive_failures'] ?? 0) > 0) {
+                $this->emitBiAlert(
+                    eventType: 'bi_etl_recovered',
+                    priority: 2,
+                    title: 'BI ETL recovered',
+                    content: sprintf('BI ETL recovered after %s consecutive failures', (int) $runSnapshot['consecutive_failures']),
+                    payload: [
+                        'recovered_from_failures' => (int) $runSnapshot['consecutive_failures'],
+                        'mode' => $requestedMode,
+                        'effective_mode' => $effectiveMode,
+                    ],
+                    dedupeKey: sprintf('bi_etl:recovered:%s', $finishedAt->format('YmdH')),
+                );
+            }
 
             return $result;
         } catch (\Throwable $e) {
             $finishedAt = CarbonImmutable::now();
+            $consecutiveFailures = (int) ($runSnapshot['consecutive_failures'] ?? 0) + 1;
             $this->recordRun([
-                'last_mode' => $mode,
-                'last_window_days' => $mode === 'incremental' ? $windowDays : null,
+                'last_mode' => $requestedMode,
+                'last_effective_mode' => $effectiveMode,
+                'last_strategy_reason' => $strategyReason,
+                'last_window_days' => $effectiveMode === 'incremental' ? $windowDays : null,
                 'last_started_at' => $startedAt,
                 'last_finished_at' => $finishedAt,
+                'last_duration_ms' => max(1, (int) $finishedAt->diffInMilliseconds($startedAt)),
                 'last_success_at' => null,
                 'last_counts_json' => null,
+                'last_total_rows' => null,
+                'last_zero_count_tables_json' => null,
+                'last_quality_score' => 0,
+                'consecutive_failures' => $consecutiveFailures,
+                'last_alert_level' => 'CRITICAL',
                 'last_error_message' => mb_substr($e->getMessage(), 0, 1000),
             ]);
+            $this->emitBiAlert(
+                eventType: 'bi_etl_failed',
+                priority: 1,
+                title: 'BI ETL failed',
+                content: mb_substr($e->getMessage(), 0, 1000),
+                payload: [
+                    'requested_mode' => $requestedMode,
+                    'effective_mode' => $effectiveMode,
+                    'strategy_reason' => $strategyReason,
+                    'consecutive_failures' => $consecutiveFailures,
+                ],
+                dedupeKey: sprintf('bi_etl:failed:%s', $finishedAt->format('YmdH')),
+            );
             throw $e;
         }
     }
@@ -68,6 +140,40 @@ class BiEtlService
     public function refreshAll(): array
     {
         return $this->refresh(['mode' => 'full']);
+    }
+
+    public function recover(array $options = []): array
+    {
+        $snapshot = $this->fetchRunSnapshot();
+        $hasFailure = is_string($snapshot['last_error_message'] ?? null) && trim((string) $snapshot['last_error_message']) !== '';
+        if (! $hasFailure) {
+            return [
+                'recovered' => false,
+                'reason' => 'no_failed_run_to_recover',
+                'last_run' => $snapshot,
+                'generated_at' => now()->toDateTimeString(),
+            ];
+        }
+
+        $recoverMode = strtolower((string) ($options['mode'] ?? config('bi.stage1.failure_recover_mode', 'full')));
+        if (! in_array($recoverMode, ['full', 'incremental', self::STAGE1_MODE], true)) {
+            $recoverMode = 'full';
+        }
+        $windowDays = (int) ($options['window_days'] ?? (int) ($snapshot['last_window_days'] ?? config('bi.stage1.incremental_window_days', 3)));
+        $windowDays = max(1, min(self::MAX_WINDOW_DAYS, $windowDays));
+
+        $refreshResult = $this->refresh([
+            'mode' => $recoverMode,
+            'window_days' => $windowDays,
+        ]);
+
+        return [
+            'recovered' => true,
+            'recovered_by' => 'bi_etl_recover',
+            'recover_mode' => $recoverMode,
+            'window_days' => $windowDays,
+            'refresh' => $refreshResult,
+        ];
     }
 
     public function summary(): array
@@ -931,6 +1037,165 @@ class BiEtlService
         }
     }
 
+    private function resolveRefreshMode(string $requestedMode, int $windowDays, array $runSnapshot): array
+    {
+        if ($requestedMode === 'full') {
+            return [
+                'effective_mode' => 'full',
+                'strategy_reason' => 'manual_full',
+                'window_days' => null,
+            ];
+        }
+        if ($requestedMode === 'incremental') {
+            return [
+                'effective_mode' => 'incremental',
+                'strategy_reason' => 'manual_incremental',
+                'window_days' => $windowDays,
+            ];
+        }
+
+        $lastSuccessRaw = $runSnapshot['last_success_at'] ?? null;
+        if ($lastSuccessRaw === null || trim((string) $lastSuccessRaw) === '') {
+            return [
+                'effective_mode' => 'full',
+                'strategy_reason' => 'stage1_bootstrap_full',
+                'window_days' => null,
+            ];
+        }
+
+        $maxLagHours = max(1, (int) config('bi.stage1.full_refresh_max_lag_hours', 24));
+        $lastSuccess = CarbonImmutable::parse((string) $lastSuccessRaw);
+        $lagHours = $lastSuccess->diffInHours(CarbonImmutable::now());
+        if ($lagHours >= $maxLagHours) {
+            return [
+                'effective_mode' => 'full',
+                'strategy_reason' => 'stage1_full_due_to_lag',
+                'window_days' => null,
+            ];
+        }
+
+        return [
+            'effective_mode' => 'incremental',
+            'strategy_reason' => 'stage1_incremental',
+            'window_days' => $windowDays,
+        ];
+    }
+
+    private function fetchRunSnapshot(): array
+    {
+        if (! Schema::hasTable('bi_etl_runs')) {
+            return [];
+        }
+
+        $row = DB::table('bi_etl_runs')
+            ->where('job_name', self::JOB_NAME)
+            ->first();
+        if ($row === null) {
+            return [];
+        }
+
+        return (array) $row;
+    }
+
+    private function buildQualityMetrics(array $counts): array
+    {
+        $zeroTables = [];
+        $factZeroTables = [];
+        $dimZeroTables = [];
+        $totalRows = 0;
+
+        foreach ($counts as $table => $count) {
+            $tableName = (string) $table;
+            $tableCount = (int) $count;
+            $totalRows += max(0, $tableCount);
+            if ($tableCount > 0) {
+                continue;
+            }
+
+            $zeroTables[] = $tableName;
+            if (str_starts_with($tableName, 'fact_')) {
+                $factZeroTables[] = $tableName;
+            } elseif (str_starts_with($tableName, 'dim_')) {
+                $dimZeroTables[] = $tableName;
+            }
+        }
+
+        $score = 100.0 - (20.0 * count($factZeroTables)) - (5.0 * count($dimZeroTables));
+        $score = max(0.0, round($score, 2));
+        $alertLevel = 'OK';
+        if (count($factZeroTables) > 0) {
+            $alertLevel = 'CRITICAL';
+        } elseif (count($dimZeroTables) > 0) {
+            $alertLevel = 'WARN';
+        }
+
+        return [
+            'total_rows' => $totalRows,
+            'zero_tables' => $zeroTables,
+            'fact_zero_tables' => $factZeroTables,
+            'dim_zero_tables' => $dimZeroTables,
+            'quality_score' => $score,
+            'alert_level' => $alertLevel,
+        ];
+    }
+
+    private function emitBiAlert(
+        string $eventType,
+        int $priority,
+        string $title,
+        string $content,
+        array $payload,
+        string $dedupeKey
+    ): void {
+        if (! (bool) config('bi.stage1.alert_enabled', true)) {
+            return;
+        }
+        if (! Schema::hasTable('notifications')) {
+            return;
+        }
+
+        $dedupeExists = DB::table('notifications')
+            ->where('dedupe_key', $dedupeKey)
+            ->where('created_at', '>=', now()->subHours(4))
+            ->exists();
+        if ($dedupeExists) {
+            return;
+        }
+
+        DB::table('notifications')->insert([
+            'event_type' => $eventType,
+            'biz_type' => 'bi_etl',
+            'biz_id' => self::JOB_NAME,
+            'priority' => max(1, min(5, $priority)),
+            'title' => $title,
+            'content' => mb_substr($content, 0, 1000),
+            'dedupe_key' => $dedupeKey,
+            'delivery_status' => 'PENDING',
+            'payload_json' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'created_at' => now(),
+            'read_at' => null,
+        ]);
+
+        if (Schema::hasTable('audit_logs')) {
+            DB::table('audit_logs')->insert([
+                'user_id' => null,
+                'action' => 'bi_etl_alert_emitted',
+                'biz_type' => 'bi_etl',
+                'biz_id' => self::JOB_NAME,
+                'request_id' => null,
+                'ip' => null,
+                'user_agent' => null,
+                'detail_json' => json_encode([
+                    'event_type' => $eventType,
+                    'priority' => $priority,
+                    'title' => $title,
+                    'dedupe_key' => $dedupeKey,
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'created_at' => now(),
+            ]);
+        }
+    }
+
     private function recordRun(array $payload): void
     {
         if (! Schema::hasTable('bi_etl_runs')) {
@@ -947,11 +1212,19 @@ class BiEtlService
             ['job_name'],
             [
                 'last_mode',
+                'last_effective_mode',
+                'last_strategy_reason',
                 'last_window_days',
                 'last_started_at',
                 'last_finished_at',
+                'last_duration_ms',
                 'last_success_at',
                 'last_counts_json',
+                'last_total_rows',
+                'last_zero_count_tables_json',
+                'last_quality_score',
+                'consecutive_failures',
+                'last_alert_level',
                 'last_error_message',
                 'updated_at',
             ]

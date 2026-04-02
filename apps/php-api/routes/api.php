@@ -59,6 +59,7 @@ Route::get('/finance/reconciliations', [FinanceCenterController::class, 'reconci
 
 Route::get('/bi/etl/summary', [BiEtlController::class, 'summary']);
 Route::post('/bi/etl/refresh', [BiEtlController::class, 'refresh']);
+Route::post('/bi/etl/recover', [BiEtlController::class, 'recover']);
 
 Route::get('/platform-product-mappings', [PlatformProductMappingController::class, 'index']);
 Route::post('/platform-product-mappings', [PlatformProductMappingController::class, 'store']);

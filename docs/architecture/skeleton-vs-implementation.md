@@ -38,6 +38,10 @@
     - CLI: `php artisan bi:etl-refresh --mode=full|incremental`
     - Scheduler: env-driven incremental refresh (`BI_ETL_*`)
   - Scope is limited to theme-table refresh and run metadata; no dashboard/report-layer implementation.
+  - Stage-1 strategy mode is fixed via `mode=stage1`:
+    - incremental first, full refresh fallback by success lag.
+  - `bi_etl_runs` now includes delivery quality indicators and failure counters.
+  - Failure compensation path is available (`POST /api/bi/etl/recover`, `php artisan bi:etl-recover`).
 
 ## Repository Hygiene Suggestions
 

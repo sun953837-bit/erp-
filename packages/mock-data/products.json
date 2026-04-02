@@ -1,0 +1,62 @@
+{
+  "spu": [
+    {
+      "spu_code": "SPU-TSHIRT-001",
+      "title": "Basic T-Shirt",
+      "brand": "KJ",
+      "category_name": "Apparel",
+      "status": "ACTIVE"
+    },
+    {
+      "spu_code": "SPU-MUG-001",
+      "title": "Ceramic Mug",
+      "brand": "KJ",
+      "category_name": "Home",
+      "status": "ACTIVE"
+    }
+  ],
+  "sku": [
+    {
+      "sku_code": "SKU-TSHIRT-BLACK-M",
+      "spu_code": "SPU-TSHIRT-001",
+      "sku_name": "T-Shirt Black M",
+      "specs_json": {
+        "color": "black",
+        "size": "M"
+      },
+      "cost_price": 4.2,
+      "cost_currency": "USD",
+      "retail_price": 12.9,
+      "retail_currency": "USD",
+      "status": "ACTIVE"
+    },
+    {
+      "sku_code": "SKU-TSHIRT-WHITE-L",
+      "spu_code": "SPU-TSHIRT-001",
+      "sku_name": "T-Shirt White L",
+      "specs_json": {
+        "color": "white",
+        "size": "L"
+      },
+      "cost_price": 4.5,
+      "cost_currency": "USD",
+      "retail_price": 13.5,
+      "retail_currency": "USD",
+      "status": "ACTIVE"
+    },
+    {
+      "sku_code": "SKU-MUG-RED-350",
+      "spu_code": "SPU-MUG-001",
+      "sku_name": "Mug Red 350ml",
+      "specs_json": {
+        "color": "red",
+        "capacity": "350ml"
+      },
+      "cost_price": 2.1,
+      "cost_currency": "USD",
+      "retail_price": 8.9,
+      "retail_currency": "USD",
+      "status": "ACTIVE"
+    }
+  ]
+}

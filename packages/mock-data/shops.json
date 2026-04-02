@@ -1,0 +1,24 @@
+[
+  {
+    "shop_code": "AMZ_US_001",
+    "shop_name": "Amazon US Demo Shop",
+    "platform_code": "amazon",
+    "site_code": "US",
+    "currency": "USD",
+    "timezone": "America/Los_Angeles",
+    "status": "ACTIVE",
+    "owner_name": "Alice",
+    "owner_phone": "13800000001"
+  },
+  {
+    "shop_code": "TIKTOK_US_001",
+    "shop_name": "TikTok US Demo Shop",
+    "platform_code": "tiktok",
+    "site_code": "US",
+    "currency": "USD",
+    "timezone": "America/New_York",
+    "status": "ACTIVE",
+    "owner_name": "Bob",
+    "owner_phone": "13800000002"
+  }
+]

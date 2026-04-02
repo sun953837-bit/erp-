@@ -1,0 +1,6 @@
+[
+  "sync_failed",
+  "inventory_low",
+  "order_created",
+  "reconciliation_mismatch"
+]

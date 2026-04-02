@@ -1,0 +1,10 @@
+{
+  "PENDING": "待执行",
+  "RUNNING": "执行中",
+  "ACCEPTED": "平台已受理（非最终成功）",
+  "SUCCESS": "最终成功",
+  "FAIL": "失败（可重试）",
+  "RETRYING": "重试中",
+  "MANUAL_REVIEW": "人工复核",
+  "CANCELLED": "已取消"
+}

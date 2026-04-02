@@ -1,0 +1,166 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: kuajing-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-kuajing_v1}
+      MYSQL_USER: ${MYSQL_USER:-kuajing}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kuajing123}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-root123}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: kuajing-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  php-api:
+    build:
+      context: ./apps/php-api
+      dockerfile: Dockerfile
+    container_name: kuajing-php-api
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_NAME: "Kuajing CRM ERP"
+      APP_ENV: ${PHP_APP_ENV:-local}
+      APP_DEBUG: ${PHP_APP_DEBUG:-true}
+      APP_URL: http://localhost:${PHP_API_PORT:-8000}
+      APP_KEY: ${PHP_APP_KEY:-}
+      LOG_CHANNEL: stack
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: ${MYSQL_DATABASE:-kuajing_v1}
+      DB_USERNAME: ${MYSQL_USER:-kuajing}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-kuajing123}
+      CACHE_DRIVER: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: file
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    volumes:
+      - ./apps/php-api:/var/www/html
+    ports:
+      - "${PHP_API_PORT:-8000}:8000"
+    command: >
+      sh -c "
+        cp -n .env.example .env || true &&
+        composer install --no-interaction --prefer-dist &&
+        php artisan key:generate --force &&
+        php artisan migrate --force &&
+        php artisan db:seed --force &&
+        php artisan serve --host=0.0.0.0 --port=8000
+      "
+
+  python-sync-api:
+    build:
+      context: ./apps/python-sync
+      dockerfile: Dockerfile
+    container_name: kuajing-python-sync-api
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${PYTHON_APP_ENV:-dev}
+      LOG_LEVEL: ${PYTHON_LOG_LEVEL:-INFO}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DB: ${MYSQL_DATABASE:-kuajing_v1}
+      MYSQL_USER: ${MYSQL_USER:-kuajing}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kuajing123}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    volumes:
+      - ./apps/python-sync:/app
+    ports:
+      - "${PYTHON_SYNC_API_PORT:-8100}:8100"
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8100 --reload
+
+  python-sync-worker:
+    build:
+      context: ./apps/python-sync
+      dockerfile: Dockerfile
+    container_name: kuajing-python-sync-worker
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${PYTHON_APP_ENV:-dev}
+      LOG_LEVEL: ${PYTHON_LOG_LEVEL:-INFO}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DB: ${MYSQL_DATABASE:-kuajing_v1}
+      MYSQL_USER: ${MYSQL_USER:-kuajing}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kuajing123}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    volumes:
+      - ./apps/python-sync:/app
+    command: >
+      celery -A app.celery_app.celery_app worker -l info -Q sync_tasks --concurrency=2
+
+  python-sync-scheduler:
+    build:
+      context: ./apps/python-sync
+      dockerfile: Dockerfile
+    container_name: kuajing-python-sync-scheduler
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${PYTHON_APP_ENV:-dev}
+      LOG_LEVEL: ${PYTHON_LOG_LEVEL:-INFO}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DB: ${MYSQL_DATABASE:-kuajing_v1}
+      MYSQL_USER: ${MYSQL_USER:-kuajing}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kuajing123}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    volumes:
+      - ./apps/python-sync:/app
+    command: >
+      celery -A app.celery_app.celery_app beat -l info
+
+volumes:
+  mysql-data:
+  redis-data:

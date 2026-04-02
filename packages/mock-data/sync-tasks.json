@@ -1,0 +1,16 @@
+[
+  {
+    "task_type": "product_publish",
+    "biz_type": "product",
+    "biz_id": "SKU-TSHIRT-BLACK-M",
+    "platform_code": "amazon",
+    "site_code": "US",
+    "status": "FAIL",
+    "retry_count": 1,
+    "max_retry_count": 3,
+    "payload_json": {
+      "sku_code": "SKU-TSHIRT-BLACK-M",
+      "mock_mode": "fail_immediate"
+    }
+  }
+]

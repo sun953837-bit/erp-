@@ -16,6 +16,13 @@ class Settings(BaseSettings):
 
     worker_batch_size: int = 20
 
+    xianyu_orders_source_mode: str = "mock"
+    xianyu_orders_endpoint: str = ""
+    xianyu_access_token: str = ""
+    xianyu_app_key: str = ""
+    xianyu_http_timeout_seconds: float = 8.0
+    xianyu_orders_extra_params_json: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

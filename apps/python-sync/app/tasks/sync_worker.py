@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from typing import Any
 
 from celery import shared_task
 from sqlalchemy import or_, select
@@ -135,14 +136,72 @@ def _persist_raw_pull_record(
 
     now = datetime.utcnow()
     raw_payload = result.get("raw_payload")
-    merged_payload = {
-        "request": request_payload,
-        "response": result,
-        "raw_payload": raw_payload if isinstance(raw_payload, dict) else {"value": raw_payload},
-    }
     external_id = result.get("external_id")
+    records = _extract_pull_records(raw_payload)
 
     if endpoint == "pull_orders":
+        _persist_raw_order_rows(
+            session=session,
+            task=task,
+            request_payload=request_payload,
+            result=result,
+            raw_payload=raw_payload,
+            now=now,
+            records=records,
+            fallback_external_id=external_id,
+        )
+        return
+
+    if endpoint == "pull_refunds":
+        _persist_raw_refund_rows(
+            session=session,
+            task=task,
+            request_payload=request_payload,
+            result=result,
+            raw_payload=raw_payload,
+            now=now,
+            records=records,
+            fallback_external_id=external_id,
+        )
+        return
+
+    if endpoint == "pull_services":
+        _persist_raw_service_rows(
+            session=session,
+            task=task,
+            request_payload=request_payload,
+            result=result,
+            raw_payload=raw_payload,
+            now=now,
+            records=records,
+            fallback_external_id=external_id,
+        )
+        return
+
+    _persist_raw_listing_rows(
+        session=session,
+        task=task,
+        request_payload=request_payload,
+        result=result,
+        raw_payload=raw_payload,
+        now=now,
+        records=records,
+        fallback_external_id=external_id,
+    )
+
+
+def _persist_raw_order_rows(
+    *,
+    session,
+    task: SyncTask,
+    request_payload: dict,
+    result: dict,
+    raw_payload: Any,
+    now: datetime,
+    records: list[dict[str, Any]],
+    fallback_external_id: Any,
+) -> None:
+    if not records:
         session.add(
             RawOrder(
                 sync_task_id=task.id,
@@ -150,8 +209,8 @@ def _persist_raw_pull_record(
                 shop_id=task.shop_id,
                 site_code=task.site_code,
                 event_key=task.task_no,
-                external_order_id=str(external_id) if external_id else None,
-                payload_json=merged_payload,
+                external_order_id=str(fallback_external_id) if fallback_external_id else None,
+                payload_json=_build_row_payload(request_payload, result, raw_payload, None, 0, 0),
                 mapped_status="PENDING",
                 received_at=now,
                 created_at=now,
@@ -160,7 +219,43 @@ def _persist_raw_pull_record(
         )
         return
 
-    if endpoint == "pull_refunds":
+    total = len(records)
+    for index, record in enumerate(records, start=1):
+        external_order_id = _pick_record_id(
+            record,
+            ["external_order_id", "order_id", "id", "biz_order_id", "trade_no"],
+            fallback_external_id,
+            index,
+        )
+        session.add(
+            RawOrder(
+                sync_task_id=task.id,
+                platform_code=task.platform_code,
+                shop_id=task.shop_id,
+                site_code=task.site_code,
+                event_key=f"{task.task_no}:{index}",
+                external_order_id=external_order_id,
+                payload_json=_build_row_payload(request_payload, result, raw_payload, record, index, total),
+                mapped_status="PENDING",
+                received_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+
+def _persist_raw_refund_rows(
+    *,
+    session,
+    task: SyncTask,
+    request_payload: dict,
+    result: dict,
+    raw_payload: Any,
+    now: datetime,
+    records: list[dict[str, Any]],
+    fallback_external_id: Any,
+) -> None:
+    if not records:
         session.add(
             RawRefund(
                 sync_task_id=task.id,
@@ -168,8 +263,8 @@ def _persist_raw_pull_record(
                 shop_id=task.shop_id,
                 site_code=task.site_code,
                 event_key=task.task_no,
-                external_refund_id=str(external_id) if external_id else None,
-                payload_json=merged_payload,
+                external_refund_id=str(fallback_external_id) if fallback_external_id else None,
+                payload_json=_build_row_payload(request_payload, result, raw_payload, None, 0, 0),
                 mapped_status="PENDING",
                 received_at=now,
                 created_at=now,
@@ -178,7 +273,43 @@ def _persist_raw_pull_record(
         )
         return
 
-    if endpoint == "pull_services":
+    total = len(records)
+    for index, record in enumerate(records, start=1):
+        external_refund_id = _pick_record_id(
+            record,
+            ["external_refund_id", "refund_id", "id"],
+            fallback_external_id,
+            index,
+        )
+        session.add(
+            RawRefund(
+                sync_task_id=task.id,
+                platform_code=task.platform_code,
+                shop_id=task.shop_id,
+                site_code=task.site_code,
+                event_key=f"{task.task_no}:{index}",
+                external_refund_id=external_refund_id,
+                payload_json=_build_row_payload(request_payload, result, raw_payload, record, index, total),
+                mapped_status="PENDING",
+                received_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+
+def _persist_raw_service_rows(
+    *,
+    session,
+    task: SyncTask,
+    request_payload: dict,
+    result: dict,
+    raw_payload: Any,
+    now: datetime,
+    records: list[dict[str, Any]],
+    fallback_external_id: Any,
+) -> None:
+    if not records:
         session.add(
             RawService(
                 sync_task_id=task.id,
@@ -186,8 +317,8 @@ def _persist_raw_pull_record(
                 shop_id=task.shop_id,
                 site_code=task.site_code,
                 event_key=task.task_no,
-                external_service_id=str(external_id) if external_id else None,
-                payload_json=merged_payload,
+                external_service_id=str(fallback_external_id) if fallback_external_id else None,
+                payload_json=_build_row_payload(request_payload, result, raw_payload, None, 0, 0),
                 mapped_status="PENDING",
                 received_at=now,
                 created_at=now,
@@ -196,21 +327,167 @@ def _persist_raw_pull_record(
         )
         return
 
-    session.add(
-        RawListing(
-            sync_task_id=task.id,
-            platform_code=task.platform_code,
-            shop_id=task.shop_id,
-            site_code=task.site_code,
-            event_key=task.task_no,
-            external_listing_id=str(external_id) if external_id else None,
-            payload_json=merged_payload,
-            mapped_status="PENDING",
-            received_at=now,
-            created_at=now,
-            updated_at=now,
+    total = len(records)
+    for index, record in enumerate(records, start=1):
+        external_service_id = _pick_record_id(
+            record,
+            ["external_service_id", "service_id", "id"],
+            fallback_external_id,
+            index,
         )
-    )
+        session.add(
+            RawService(
+                sync_task_id=task.id,
+                platform_code=task.platform_code,
+                shop_id=task.shop_id,
+                site_code=task.site_code,
+                event_key=f"{task.task_no}:{index}",
+                external_service_id=external_service_id,
+                payload_json=_build_row_payload(request_payload, result, raw_payload, record, index, total),
+                mapped_status="PENDING",
+                received_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+
+def _persist_raw_listing_rows(
+    *,
+    session,
+    task: SyncTask,
+    request_payload: dict,
+    result: dict,
+    raw_payload: Any,
+    now: datetime,
+    records: list[dict[str, Any]],
+    fallback_external_id: Any,
+) -> None:
+    if not records:
+        session.add(
+            RawListing(
+                sync_task_id=task.id,
+                platform_code=task.platform_code,
+                shop_id=task.shop_id,
+                site_code=task.site_code,
+                event_key=task.task_no,
+                external_listing_id=str(fallback_external_id) if fallback_external_id else None,
+                payload_json=_build_row_payload(request_payload, result, raw_payload, None, 0, 0),
+                mapped_status="PENDING",
+                received_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        return
+
+    total = len(records)
+    for index, record in enumerate(records, start=1):
+        external_listing_id = _pick_record_id(
+            record,
+            ["external_listing_id", "listing_id", "id"],
+            fallback_external_id,
+            index,
+        )
+        session.add(
+            RawListing(
+                sync_task_id=task.id,
+                platform_code=task.platform_code,
+                shop_id=task.shop_id,
+                site_code=task.site_code,
+                event_key=f"{task.task_no}:{index}",
+                external_listing_id=external_listing_id,
+                payload_json=_build_row_payload(request_payload, result, raw_payload, record, index, total),
+                mapped_status="PENDING",
+                received_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+
+def _extract_pull_records(raw_payload: Any) -> list[dict[str, Any]]:
+    if isinstance(raw_payload, list):
+        return [item for item in raw_payload if isinstance(item, dict)]
+
+    if not isinstance(raw_payload, dict):
+        return []
+
+    candidates = [
+        raw_payload.get("records"),
+        raw_payload.get("orders"),
+        raw_payload.get("items"),
+        raw_payload.get("list"),
+    ]
+
+    data = raw_payload.get("data")
+    if isinstance(data, dict):
+        candidates.extend([
+            data.get("records"),
+            data.get("orders"),
+            data.get("items"),
+            data.get("list"),
+        ])
+
+    for candidate in candidates:
+        if isinstance(candidate, list):
+            return [item for item in candidate if isinstance(item, dict)]
+
+    return []
+
+
+def _build_row_payload(
+    request_payload: dict,
+    result: dict,
+    raw_payload: Any,
+    record: dict[str, Any] | None,
+    index: int,
+    total: int,
+) -> dict[str, Any]:
+    response_summary = {
+        "success": result.get("success"),
+        "accepted": result.get("accepted"),
+        "final": result.get("final"),
+        "code": result.get("code"),
+        "message": result.get("message"),
+        "external_id": result.get("external_id"),
+    }
+    raw_meta = raw_payload if isinstance(raw_payload, dict) else {"value": raw_payload}
+    if isinstance(raw_meta, dict) and "records" in raw_meta:
+        raw_meta = {key: value for key, value in raw_meta.items() if key != "records"}
+
+    records = [record] if isinstance(record, dict) else []
+    return {
+        "request": request_payload,
+        "response": response_summary,
+        "raw_payload": {
+            "records": records,
+            "meta": raw_meta,
+            "record_index": index,
+            "record_count": total,
+        },
+    }
+
+
+def _pick_record_id(
+    record: dict[str, Any],
+    keys: list[str],
+    fallback_external_id: Any,
+    index: int,
+) -> str | None:
+    for key in keys:
+        value = record.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text != "":
+            return text
+
+    if fallback_external_id:
+        text = str(fallback_external_id).strip()
+        if text != "":
+            return f"{text}:{index}"
+    return None
 
 
 @shared_task(name="app.tasks.sync_worker.execute_pending_sync_tasks")

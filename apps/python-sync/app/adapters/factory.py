@@ -2,6 +2,7 @@ from app.adapters.amazon_mock import AmazonMockAdapter
 from app.adapters.japan_mock import JapanMockAdapter
 from app.adapters.korea_mock import KoreaMockAdapter
 from app.adapters.tiktok_mock import TiktokMockAdapter
+from app.adapters.xianyu_adapter import XianyuAdapter
 from app.adapters.xianyu_mock import XianyuMockAdapter
 from app.adapters.zbj_mock import ZbjMockAdapter
 from app.adapters.base import BasePlatformAdapter
@@ -14,7 +15,7 @@ class AdapterFactory:
             "tiktok": TiktokMockAdapter(),
             "japan": JapanMockAdapter(),
             "korea": KoreaMockAdapter(),
-            "xianyu": XianyuMockAdapter(),
+            "xianyu": XianyuAdapter(),
             "zbj": ZbjMockAdapter(),
         }
 
